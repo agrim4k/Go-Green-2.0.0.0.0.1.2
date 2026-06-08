@@ -1,430 +1,1095 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
+<head>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="./style.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global Pulse live demographics</title>
-    <link rel="stylesheet" href="style.css">
-    <meta name="description"content="Real-time global population and live demographics insights powered by live public data">
-  </head>
-  
-  <body>
-   <header class="header">
-     <div class="header-content">
-       <h1>Global Pulse</h1>
-       <p class="subtitle">
-         Live demographic tracking and population estimates powered by live public streams.
-       </p>
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Global Pulse Live Demographics</title>
+
+    <meta
+        name="description"
+        content="Real-time global population and live demographics insights powered by live public data"
+    >
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: #09090b;
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(79, 70, 229, 0.1), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(14, 165, 233, 0.1), transparent 25%);
+            color: #fafafa;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* GLASS */
+        .glass-panel {
+            background: rgba(24, 24, 27, 0.6);
+
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+
+            border: 1px solid rgba(255,255,255,0.05);
+
+            border-radius: 24px;
+
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+
+            transition:
+                transform 0.3s ease,
+                border-color 0.3s ease;
+        }
+
+        .glass-panel:hover {
+            border-color: rgba(255,255,255,0.1);
+            transform: translateY(-2px);
+        }
+
+        .neon-text {
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* SEARCH */
+        #searchInput {
+            width: 100%;
+            max-width: 450px;
+
+            padding: 1rem 1.5rem;
+
+            border-radius: 999px;
+
+            border: 1px solid rgba(255,255,255,0.08);
+
+            background: rgba(255,255,255,0.04);
+
+            color: white;
+
+            outline: none;
+
+            transition: 0.3s ease;
+
+            backdrop-filter: blur(10px);
+        }
+
+        #searchInput:focus {
+            border-color: #60a5fa;
+            box-shadow: 0 0 20px rgba(96,165,250,0.2);
+        }
+
+        /* COUNTRY CARD */
+        .country-card {
+            position: relative;
+
+            overflow: hidden;
+
+            padding: 1.25rem;
+
+            border-radius: 20px;
+
+            background: rgba(255,255,255,0.03);
+
+            border: 1px solid rgba(255,255,255,0.05);
+
+            transition:
+                transform 0.3s ease,
+                background 0.3s ease;
+        }
+
+        .country-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255,255,255,0.06);
+        }
+
+        .country-card::before {
+            content: '';
+
+            position: absolute;
+
+            top: 0;
+            left: 0;
+
+            width: 100%;
+            height: 3px;
+
+            background: linear-gradient(90deg, #60a5fa, #a78bfa);
+
+            opacity: 0;
+
+            transition: opacity 0.3s ease;
+        }
+
+        .country-card:hover::before {
+            opacity: 1;
+        }
+
+        /* FLAG */
+        .flag {
+            width: 42px;
+            height: 30px;
+
+            object-fit: cover;
+
+            border-radius: 8px;
+
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        /* POPULATION */
+        .population {
+            font-size: 1.8rem;
+            font-weight: 800;
+
+            color: #60a5fa;
+
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* LIVE INDICATOR */
+        .indicator {
+            width: 8px;
+            height: 8px;
+
+            border-radius: 50%;
+
+            background: #10b981;
+
+            box-shadow: 0 0 10px #10b981;
+
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.4;
+                transform: scale(1.2);
+            }
+
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        /* LOADER */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: #60a5fa;
+
+            border-radius: 50%;
+
+            width: 24px;
+            height: 24px;
+
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* PULSE RING */
+        .pulse-ring {
+            box-shadow: 0 0 0 0 rgba(96,165,250,0.7);
+
+            animation: ring-pulse 2s infinite;
+        }
+
+        @keyframes ring-pulse {
+            70% {
+                box-shadow: 0 0 0 10px rgba(96,165,250,0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(96,165,250,0);
+            }
+        }
+
+        /* SCROLLBAR */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+
+        /* MODAL */
+        #graph-modal {
+            transition: 0.3s ease;
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+
+    <!-- NAV -->
+    <nav class="max-w-7xl mx-auto flex justify-between items-center mb-8">
+
+        <div class="flex items-center gap-3">
+            <div class="w-3 h-3 bg-blue-400 rounded-full pulse-ring"></div>
+
+            <h1 class="text-2xl font-extrabold tracking-wide">
+                GLOBAL<span class="neon-text">PULSE</span>
+            </h1>
+        </div>
+
+        <div
+            id="api-status"
+            class="flex items-center gap-2 text-xs font-medium text-slate-400 bg-white/5 px-4 py-2 rounded-full border border-white/10"
+        >
+            <div class="loader"></div>
+            Fetching REST Countries API...
+        </div>
+        <div class="jarvis-ai">
+            <a href="#Jarvis" class="btn-Jarvis">Ask Jarvis</a>
+        </div>
        
-     </div>
-   </header>
-    <main>
-      <section class="controls">
+    </nav>
+
+    <!-- SEARCH -->
+    <section class="max-w-7xl mx-auto mb-8 flex justify-center">
+
         <input
-          type="text"
-          id="searchInput"
-          placeholder="Search for a country..."
-          aria-label="Search Country"
-          >
-        
-      </section>
-      <section
-        class="dashboard"
-        id="dashboard"
-        aria-live="polite"
-      > 
-      <div class="loader">
-        Establishing secure connections to data streams...
-      </div>
-        
-      </section>
-      
-    </main>
-    <script src="script.js"></script>
-  </body>
-  <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&display=swap');
+            type="text"
+            id="searchInput"
+            placeholder="Search for a country or region..."
+        >
 
-/* ================================
-   VARIABLES
-================================ */
-:root {
-    --bg-color: #0b0f19;
-    --card-bg: rgba(255, 255, 255, 0.03);
-    --card-border: rgba(255, 255, 255, 0.08);
+    </section>
 
-    --accent-primary: #00f0ff;
-    --accent-secondary: #7000ff;
+    <!-- MAIN -->
+    <main
+        id="dashboard-main"
+        class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 opacity-0"
+    >
 
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-}
+        <!-- GLOBAL POP -->
+        <div class="lg:col-span-8 glass-panel p-8 flex flex-col justify-center min-h-[300px]">
 
-/* ================================
-   BASE RESET
-================================ */
-* {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-}
+            <h2 class="text-slate-400 font-semibold uppercase tracking-widest text-sm mb-4 flex items-center gap-2">
+                <i data-lucide="globe" class="w-4 h-4"></i>
+                Live Global Population
+            </h2>
 
-body {
-    font-family: 'Space Grotesk', sans-serif;
-    background-color: var(--bg-color);
-    color: var(--text-main);
-    min-height: 100vh;
-    overflow-x: hidden;
+            <div
+                id="global-counter"
+                class="text-6xl md:text-8xl font-black tracking-tighter"
+            >
+                --
+            </div>
 
-    background-image:
-        radial-gradient(circle at 15% 50%, rgba(0, 240, 255, 0.08), transparent 25%),
-        radial-gradient(circle at 85% 30%, rgba(112, 0, 255, 0.08), transparent 25%);
-    background-attachment: fixed;
-}
+            <div class="mt-6 flex gap-6 flex-wrap text-sm">
 
-/* ================================
-   LAYOUT
-================================ */
-header {
-    text-align: center;
-    padding: 4rem 2rem 2rem;
-}
+                <div class="bg-emerald-500/10 text-emerald-400 px-4 py-2 rounded-xl border border-emerald-500/20 flex items-center gap-2">
+                    <i data-lucide="arrow-up-right" class="w-4 h-4"></i>
+                    ~2.4 births / sec
+                </div>
 
-.controls {
-    display: flex;
-    justify-content: center;
-    padding: 0 2rem;
-    margin-bottom: 3rem;
-}
+                <div class="bg-rose-500/10 text-rose-400 px-4 py-2 rounded-xl border border-rose-500/20 flex items-center gap-2">
+                    <i data-lucide="arrow-down-right" class="w-4 h-4"></i>
+                    ~1.0 deaths / sec
+                </div>
 
-.dashboard {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 0 2rem 4rem;
-
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1.5rem;
-}
-
-/* ================================
-   TYPOGRAPHY
-================================ */
-h1 {
-    font-size: 3rem;
-    font-weight: 700;
-    letter-spacing: -1px;
-    margin-bottom: 1rem;
-
-    background: linear-gradient(to right, var(--accent-primary), #ffffff);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-
-.subtitle {
-    max-width: 600px;
-    margin: 0 auto 2rem;
-    font-size: 1.1rem;
-    color: var(--text-muted);
-}
-
-/* ================================
-   INPUT
-================================ */
-input[type="text"] {
-    width: 100%;
-    max-width: 400px;
-
-    padding: 1rem 1.5rem;
-    border-radius: 50px;
-
-    border: 1px solid var(--card-border);
-    background: rgba(0, 0, 0, 0.5);
-
-    color: var(--text-main);
-    font-family: inherit;
-    font-size: 1rem;
-
-    outline: none;
-    backdrop-filter: blur(10px);
-
-    transition: all 0.3s ease;
-}
-
-input[type="text"]:focus {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
-}
-
-/* ================================
-   CARD COMPONENT
-================================ */
-.card {
-    position: relative;
-    overflow: hidden;
-
-    padding: 1.5rem;
-    border-radius: 20px;
-
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-/* Top glow bar */
-.card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-
-    width: 100%;
-    height: 4px;
-
-    background: linear-gradient(90deg, var(--accent-secondary), var(--accent-primary));
-    opacity: 0;
-
-    transition: opacity 0.3s ease;
-}
-
-/* Hover effects */
-.card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-}
-
-.card:hover::before {
-    opacity: 1;
-}
-
-/* ================================
-   CARD CONTENT
-================================ */
-.card-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-
-    margin-bottom: 1.5rem;
-}
-
-.flag {
-    width: 40px;
-    height: 40px;
-
-    border-radius: 50%;
-    object-fit: cover;
-
-    border: 2px solid rgba(255,255,255,0.1);
-}
-
-.country-name {
-    font-size: 1.25rem;
-    font-weight: 600;
-}
-
-.region {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* ================================
-   POPULATION BLOCK
-================================ */
-.population-container {
-    margin-top: 1rem;
-}
-
-.label {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin-bottom: 0.5rem;
-}
-
-.population {
-    display: flex;
-    align-items: baseline;
-    gap: 5px;
-
-    font-size: 2.5rem;
-    font-weight: 700;
-
-    color: var(--accent-primary);
-    font-variant-numeric: tabular-nums;
-}
-
-/* ================================
-   LIVE INDICATOR
-================================ */
-.indicator {
-    width: 8px;
-    height: 8px;
-
-    border-radius: 50%;
-    background-color: #10b981;
-
-    box-shadow: 0 0 10px #10b981;
-    animation: pulse 2s infinite;
-}
-
-@keyframes pulse {
-    0%   { opacity: 1; transform: scale(1); }
-    50%  { opacity: 0.4; transform: scale(1.2); }
-    100% { opacity: 1; transform: scale(1); }
-}
-
-/* ================================
-   LOADER
-================================ */
-.loader {
-    grid-column: 1 / -1;
-    text-align: center;
-
-    font-size: 1.2rem;
-    color: var(--accent-primary);
-}
-  </style>
-  <script>
-    const dashboard = document.getElementById('dashboard');
-const searchInput = document.getElementById('searchInput');
-
-let countryData = [];
-
-/* ================================
-   API FETCH
-================================ */
-async function fetchCountries() {
-    try {
-        const response = await fetch(API_URL);
-        const data = await response.json();
-
-        countryData = processCountryData(data);
-
-        renderDashboard(countryData);
-        startLiveSimulation();
-
-    } catch (error) {
-        handleError(error);
-    }
-}
-
-const API_URL = 'https://restcountries.com/v3.1/all?fields=name,population,flags,region';
-
-/* ================================
-   DATA PROCESSING
-================================ */
-function processCountryData(data) {
-    return data
-        .sort((a, b) => b.population - a.population)
-        .map(country => ({
-            ...country,
-            currentPop: country.population,
-            growthRate: generateGrowthRate(country.population)
-        }));
-}
-
-function generateGrowthRate(population) {
-    return population * (Math.random() * 0.00000005 + 0.00000001);
-}
-
-/* ================================
-   RENDERING
-================================ */
-function renderDashboard(data) {
-    dashboard.innerHTML = '';
-
-    data.forEach((country, index) => {
-        dashboard.appendChild(createCard(country, index));
-    });
-}
-
-function createCard(country, index) {
-    const card = document.createElement('div');
-    card.className = 'card';
-
-    card.innerHTML = `
-        <div class="card-header">
-            <img src="${country.flags.svg}" class="flag">
-            <div>
-                <div class="country-name">${country.name.common}</div>
-                <div class="region">${country.region}</div>
             </div>
         </div>
 
-        <div class="population-container">
-            <div class="label">Estimated Population</div>
-            <div class="population">
-                <span class="indicator"></span>
-                <span id="pop-${index}">
-                    ${formatNumber(country.currentPop)}
+        <!-- CONTINENTS -->
+        <div class="lg:col-span-4 glass-panel p-6">
+
+            <h3 class="font-bold mb-6 flex items-center gap-2 text-slate-200">
+                <i data-lucide="pie-chart" class="w-5 h-5 text-purple-400"></i>
+                Continental Share
+            </h3>
+
+            <ul
+                id="region-list"
+                class="space-y-5"
+            ></ul>
+
+        </div>
+
+        <!-- COUNTRIES -->
+        <div class="lg:col-span-12 glass-panel p-6">
+
+            <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+
+                <h3 class="font-bold flex items-center gap-2 text-slate-200">
+                    <i data-lucide="bar-chart-2" class="w-5 h-5 text-blue-400"></i>
+                    Live Country Demographics
+                </h3>
+
+                <span class="text-xs text-slate-500">
+                    Based on latest API estimates
                 </span>
+
             </div>
+
+            <div
+                id="country-grid"
+                class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+            ></div>
+
         </div>
-    `;
 
-    return card;
-}
+    </main>
 
-/* ================================
-   SEARCH
-================================ */
-function handleSearch(e) {
-    const searchTerm = e.target.value.toLowerCase();
+    <!-- GRAPH MODAL -->
+    <div
+        id="graph-modal"
+        class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-4"
+    >
 
-    const filtered = countryData.filter(country =>
-        country.name.common.toLowerCase().includes(searchTerm) ||
-        country.region.toLowerCase().includes(searchTerm)
-    );
+        <div class="glass-panel w-full max-w-5xl p-6 relative">
 
-    renderDashboard(filtered);
-}
+            <button
+                id="close-modal"
+                class="absolute top-4 right-4 text-slate-400 hover:text-white text-2xl"
+            >
+                ✕
+            </button>
 
-searchInput.addEventListener('input', handleSearch);
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
 
-/* ================================
-   LIVE SIMULATION
-================================ */
-function startLiveSimulation() {
-    setInterval(updatePopulation, 1000);
-}
+                <div>
+                    <h2
+                        id="graph-title"
+                        class="text-2xl font-bold"
+                    >
+                        Population Trend
+                    </h2>
 
-function updatePopulation() {
-    countryData.forEach((country, index) => {
-        country.currentPop += country.growthRate;
+                    <p class="text-slate-400 text-sm mt-1">
+                        Historical population data from World Bank API
+                    </p>
+                </div>
 
-        updateDOMPopulation(index, country.currentPop);
-    });
-}
+                <div class="flex gap-2 flex-wrap">
 
-function updateDOMPopulation(index, value) {
-    const el = document.getElementById('pop-${index}');
-    if (el) {
-        el.innerText = formatNumber(value);
+                    <button
+                        class="graph-range px-4 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-300"
+                        data-range="1"
+                    >
+                        1Y
+                    </button>
+
+                    <button
+                        class="graph-range px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300"
+                        data-range="5"
+                    >
+                        5Y
+                    </button>
+
+                    <button
+                        class="graph-range px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300"
+                        data-range="10"
+                    >
+                        10Y
+                    </button>
+
+                    <button
+                        class="graph-range px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300"
+                        data-range="max"
+                    >
+                        MAX
+                    </button>
+
+                </div>
+
+            </div>
+
+            <div class="h-[420px]">
+                <canvas id="population-chart"></canvas>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        lucide.createIcons();
+
+        /* =========================
+           STATE
+        ========================= */
+
+        let countryData = [];
+        let baseGlobalPop = 0;
+        let regionsData = {};
+
+        let populationChart = null;
+        let currentRegion = null;
+        let allHistoricalData = [];
+
+        /* =========================
+           DOM
+        ========================= */
+
+        const apiStatus = document.getElementById('api-status');
+        const globalCounter = document.getElementById('global-counter');
+        const regionList = document.getElementById('region-list');
+        const countryGrid = document.getElementById('country-grid');
+        const dashboardMain = document.getElementById('dashboard-main');
+        const searchInput = document.getElementById('searchInput');
+
+        const graphModal = document.getElementById('graph-modal');
+        const closeModal = document.getElementById('close-modal');
+        const graphTitle = document.getElementById('graph-title');
+
+        /* =========================
+           APIs
+        ========================= */
+
+        const API_URL =
+            'https://restcountries.com/v3.1/all?fields=name,population,flags,region';
+
+        const regionCountryCodes = {
+            Asia: ['CN','IN','ID','PK','BD','JP','PH','VN','TH','KR'],
+            Africa: ['NG','ET','EG','ZA','KE','DZ','UG','SD','MA','GH'],
+            Europe: ['DE','FR','GB','IT','ES','PL','UA','NL','SE','RO'],
+            Americas: ['US','BR','MX','CA','AR','CO','PE','VE','CL','CU'],
+            Oceania: ['AU','NZ','PG','FJ']
+        };
+
+        /* =========================
+           FETCH COUNTRIES
+        ========================= */
+
+        async function fetchCountries() {
+
+            try {
+
+                const response = await fetch(API_URL);
+
+                const data = await response.json();
+
+                processCountryData(data);
+
+                renderRegions();
+
+                renderCountries(countryData);
+
+                updateGlobalCounter();
+
+                animateDashboard();
+
+                apiStatus.innerHTML = `
+                    <span class="text-emerald-400 flex items-center gap-2">
+                        <i data-lucide="check-circle" class="w-4 h-4"></i>
+                        API Synced Successfully
+                    </span>
+                `;
+
+                lucide.createIcons();
+
+                startLiveSimulation();
+
+            } catch (error) {
+
+                console.error(error);
+
+                apiStatus.innerHTML = `
+                    <span class="text-rose-400 flex items-center gap-2">
+                        <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                        API Connection Failed
+                    </span>
+                `;
+
+                lucide.createIcons();
+            }
+        }
+
+        /* =========================
+           PROCESS DATA
+        ========================= */
+
+        function processCountryData(data) {
+
+            countryData = data
+                .sort((a, b) => b.population - a.population)
+                .map(country => ({
+                    ...country,
+                    currentPop: country.population,
+                    growthRate: generateGrowthRate(country.population)
+                }));
+
+            baseGlobalPop = 0;
+            regionsData = {};
+
+            countryData.forEach(country => {
+
+                baseGlobalPop += country.population;
+
+                const region = country.region || 'Other';
+
+                regionsData[region] =
+                    (regionsData[region] || 0)
+                    + country.population;
+            });
+        }
+
+        function generateGrowthRate(population) {
+
+            return population *
+                (Math.random() * 0.00000005 + 0.00000001);
+        }
+
+        /* =========================
+           GLOBAL COUNTER
+        ========================= */
+
+        function updateGlobalCounter() {
+
+            globalCounter.innerText =
+                Math.floor(baseGlobalPop).toLocaleString();
+        }
+
+        /* =========================
+           RENDER REGIONS
+        ========================= */
+
+        function renderRegions() {
+
+            regionList.innerHTML = '';
+
+            const regionColors = {
+                Asia: 'bg-blue-500',
+                Africa: 'bg-emerald-500',
+                Americas: 'bg-purple-500',
+                Europe: 'bg-rose-500',
+                Oceania: 'bg-amber-500'
+            };
+
+            Object.entries(regionsData)
+                .sort((a, b) => b[1] - a[1])
+                .filter(r => r[0] !== 'Other')
+                .forEach(([name, pop]) => {
+
+                    const percentage =
+                        ((pop / baseGlobalPop) * 100).toFixed(1);
+
+                    const li = document.createElement('li');
+
+                    li.className =
+                        'space-y-2 cursor-pointer hover:bg-white/5 p-3 rounded-xl transition-all';
+
+                    li.innerHTML = `
+                        <div class="flex justify-between text-sm">
+
+                            <span class="text-slate-300">
+                                ${name}
+                            </span>
+
+                            <span class="text-slate-400 font-mono">
+                                ${percentage}%
+                            </span>
+
+                        </div>
+
+                        <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+
+                            <div
+                                class="${regionColors[name] || 'bg-slate-500'} h-full rounded-full"
+                                style="width:${percentage}%"
+                            ></div>
+
+                        </div>
+                    `;
+
+                    li.addEventListener('click', () => {
+                        openPopulationGraph(name);
+                    });
+
+                    regionList.appendChild(li);
+                });
+        }
+
+        /* =========================
+           RENDER COUNTRIES
+        ========================= */
+
+        function renderCountries(data) {
+
+            countryGrid.innerHTML = '';
+
+            data.forEach((country, index) => {
+
+                const card = document.createElement('div');
+
+                card.className = 'country-card';
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+
+                        <img
+                            src="${country.flags.svg}"
+                            class="flag"
+                        >
+
+                        <span class="text-xs text-slate-500 font-bold">
+                            #${index + 1}
+                        </span>
+
+                    </div>
+
+                    <div class="mb-3">
+
+                        <h3 class="font-semibold text-lg truncate">
+                            ${country.name.common}
+                        </h3>
+
+                        <p class="text-sm text-slate-400 uppercase tracking-wide">
+                            ${country.region}
+                        </p>
+
+                    </div>
+
+                    <div class="flex items-center gap-2 mb-2">
+
+                        <span class="indicator"></span>
+
+                        <span class="text-xs text-emerald-400 uppercase tracking-wider">
+                            Live Estimate
+                        </span>
+
+                    </div>
+
+                    <div
+                        class="population"
+                        id="pop-${index}"
+                    >
+                        ${Math.floor(country.currentPop).toLocaleString()}
+                    </div>
+                `;
+
+                countryGrid.appendChild(card);
+            });
+        }
+
+        /* =========================
+           SEARCH
+        ========================= */
+
+        searchInput.addEventListener('input', e => {
+
+            const term = e.target.value.toLowerCase();
+
+            const filtered =
+                countryData.filter(country =>
+                    country.name.common.toLowerCase().includes(term)
+                    ||
+                    country.region.toLowerCase().includes(term)
+                );
+
+            renderCountries(filtered);
+        });
+
+        /* =========================
+           LIVE SIMULATION
+        ========================= */
+
+        function startLiveSimulation() {
+
+            setInterval(() => {
+
+                baseGlobalPop += Math.random() > 0.3 ? 1 : 2;
+
+                updateGlobalCounter();
+
+                countryData.forEach((country, index) => {
+
+                    country.currentPop += country.growthRate;
+
+                    const el =
+                        document.getElementById('pop-${index}');
+
+                    if (el) {
+
+                        el.innerText =
+                            Math.floor(country.currentPop)
+                            .toLocaleString();
+                    }
+                });
+
+            }, 1000);
+        }
+
+        /* =========================
+           ANIMATE
+        ========================= */
+
+        function animateDashboard() {
+
+            gsap.to(dashboardMain, {
+                opacity: 1,
+                duration: 1,
+                ease: 'power2.out'
+            });
+
+            gsap.from('.glass-panel', {
+                y: 20,
+                opacity: 0,
+                duration: 0.8,
+                stagger: 0.15,
+                ease: 'power3.out',
+                delay: 0.2
+            });
+        }
+
+        /* =========================
+           OPEN GRAPH
+        ========================= */
+
+        async function openPopulationGraph(region) {
+
+            currentRegion = region;
+
+            graphModal.classList.remove('hidden');
+            graphModal.classList.add('flex');
+
+            graphTitle.innerText =
+                `${region} Population Trend`;
+
+            const data =
+                await fetchHistoricalPopulation(region);
+
+            allHistoricalData = data;
+
+            updateChart('max');
+        }
+
+        closeModal.addEventListener('click', () => {
+
+            graphModal.classList.add('hidden');
+            graphModal.classList.remove('flex');
+        });
+
+        /* =========================
+           HISTORICAL DATA
+        ========================= */
+
+        async function fetchHistoricalPopulation(region) {
+
+            const countryCodes =
+                regionCountryCodes[region] || [];
+
+            const yearlyTotals = {};
+
+            for (const code of countryCodes) {
+
+                try {
+
+                    const response = await fetch(
+                        `https://api.worldbank.org/v2/country/${code}/indicator/SP.POP.TOTL?format=json`
+                    );
+
+                    const json = await response.json();
+
+                    const records = json[1] || [];
+
+                    records.forEach(record => {
+
+                        if (!record.value) return;
+
+                        const year = record.date;
+
+                        yearlyTotals[year] =
+                            (yearlyTotals[year] || 0)
+                            + record.value;
+                    });
+
+                } catch (err) {
+
+                    console.error(err);
+                }
+            }
+
+            return Object.entries(yearlyTotals)
+                .map(([year, population]) => ({
+                    year,
+                    population
+                }))
+                .sort((a, b) => a.year - b.year);
+        }
+
+        /* =========================
+           UPDATE CHART
+        ========================= */
+
+        function updateChart(range) {
+
+            let filtered = [...allHistoricalData];
+
+            if (range !== 'max') {
+
+                filtered =
+                    filtered.slice(-parseInt(range));
+            }
+
+            const labels =
+                filtered.map(item => item.year);
+
+            const values =
+                filtered.map(item => item.population);
+
+            const ctx =
+                document
+                    .getElementById('population-chart')
+                    .getContext('2d');
+
+            if (populationChart) {
+
+                populationChart.destroy();
+            }
+
+            populationChart = new Chart(ctx, {
+
+                type: 'line',
+
+                data: {
+
+                    labels,
+
+                    datasets: [{
+                        label:
+                            `${currentRegion} Population`,
+
+                        data: values,
+
+                        borderColor: '#60a5fa',
+
+                        backgroundColor:
+                            'rgba(96,165,250,0.15)',
+
+                        fill: true,
+
+                        tension: 0.35,
+
+                        borderWidth: 3,
+
+                        pointRadius: 0,
+
+                        pointHoverRadius: 6
+                    }]
+                },
+
+                options: {
+
+                    responsive: true,
+
+                    maintainAspectRatio: false,
+
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+
+                    plugins: {
+
+                        legend: {
+
+                            labels: {
+                                color: '#fff'
+                            }
+                        }
+                    },
+
+                    scales: {
+
+                        x: {
+
+                            ticks: {
+                                color: '#94a3b8'
+                            },
+
+                            grid: {
+                                color:
+                                    'rgba(255,255,255,0.05)'
+                            }
+                        },
+
+                        y: {
+
+                            ticks: {
+
+                                color: '#94a3b8',
+
+                                callback: value =>
+                                    new Intl.NumberFormat()
+                                    .format(value)
+                            },
+
+                            grid: {
+                                color:
+                                    'rgba(255,255,255,0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /* =========================
+           RANGE BUTTONS
+        ========================= */
+
+        const rangeButtons =
+            document.querySelectorAll('.graph-range');
+
+        rangeButtons.forEach(button => {
+
+            button.addEventListener('click', () => {
+
+                rangeButtons.forEach(btn => {
+
+                    btn.classList.remove(
+                        'bg-blue-500/20',
+                        'border-blue-500/30',
+                        'text-blue-300'
+                    );
+
+                    btn.classList.add(
+                        'bg-white/5',
+                        'border-white/10',
+                        'text-slate-300'
+                    );
+                });
+
+                button.classList.remove(
+                    'bg-white/5',
+                    'border-white/10',
+                    'text-slate-300'
+                );
+
+                button.classList.add(
+                    'bg-blue-500/20',
+                    'border-blue-500/30',
+                    'text-blue-300'
+                );
+
+                updateChart(button.dataset.range);
+            });
+        });
+
+        /* =========================
+           INIT
+        ========================= */
+
+        fetchCountries();
+        // Boot the application
+document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Select the link using its classes
+const deployBtn = document.querySelector('.btn-Jarvis');
+
+deployBtn.addEventListener('click', function(event) {
+    // 1. Prevent the default '#' jump behavior
+    event.preventDefault();
+
+    // 2. Redirect to your target page
+    window.location.href = 'jarvis.html';
+});
+    </script>
+<audio id="jarvis-music-player"></audio>
+
+<script>
+
+window.addEventListener("DOMContentLoaded",async()=>{
+
+    const audio =
+        document.getElementById(
+            "jarvis-music-player"
+        );
+
+    const savedSrc =
+        localStorage.getItem(
+            "jarvis_music_src"
+        );
+
+    const savedTime =
+        localStorage.getItem(
+            "jarvis_music_time"
+        );
+
+    if(savedSrc){
+
+        audio.src = savedSrc;
+
+        audio.currentTime =
+            parseFloat(savedTime || 0);
+
+        try{
+
+            await audio.play();
+
+        }catch(err){
+
+            console.log(
+                "Autoplay blocked"
+            );
+
+        }
+
     }
-}
 
-/* ================================
-   UTILS
-================================ */
-function formatNumber(num) {
-    return Math.floor(num).toLocaleString();
-}
+});
 
-function handleError(error) {
-    dashboard.innerHTML =
-        '<div class="loader" style="color:#ef4444;">Failed to load data stream. Please try again.</div>';
-    console.error("Error fetching data:", error);
-}
+</script>
+<script>
 
-/* ================================
-   INIT
-================================ */
-fetchCountries();
-  </script>
+window.addEventListener("beforeunload",()=>{
+
+    const audio =
+        document.getElementById(
+            "jarvis-music-player"
+        );
+
+    if(audio){
+
+        localStorage.setItem(
+            "jarvis_music_time",
+            audio.currentTime
+        );
+
+    }
+
+});
+
+</script>
+</body>
+</html>
