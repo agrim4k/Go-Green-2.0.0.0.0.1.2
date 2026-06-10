@@ -2330,6 +2330,7 @@ footer{
         </div>
 
         <iframe
+            id="jarvisFrame"
             src="jarvis.html"
             class="jarvis-frame">
         </iframe>
@@ -3702,6 +3703,185 @@ function loadMessages(){
         </div>
 
     </div>
+    <!-- ================= AI SEARCH BAR ================= -->
+
+<section class="ai-search-wrapper">
+
+    <div class="ai-search-glass">
+
+        <div class="ai-icon">🌿</div>
+
+        <input
+            id="aiSearchInput"
+            type="text"
+            placeholder="Ask Go Green AI anything..."
+        >
+
+        <button id="aiSearchBtn">
+            Search
+        </button>
+
+    </div>
+
+    <div id="aiSearchResult" class="ai-search-result">
+
+        <div class="ai-result-content">
+            Ask a question above.
+        </div>
+
+    </div>
+
+</section>
+
+<style>
+
+.ai-search-wrapper{
+    width:100%;
+    max-width:1000px;
+    margin:30px auto;
+    padding:0 20px;
+}
+
+.ai-search-glass{
+    display:flex;
+    align-items:center;
+    gap:15px;
+
+    padding:15px 20px;
+
+    border-radius:30px;
+
+    background:rgba(0,255,136,.12);
+
+    backdrop-filter:blur(20px);
+
+    border:1px solid rgba(0,255,136,.3);
+
+    box-shadow:
+    0 0 25px rgba(0,255,136,.15),
+    inset 0 0 20px rgba(0,255,136,.08);
+}
+
+.ai-icon{
+    font-size:24px;
+}
+
+.ai-search-glass input{
+    flex:1;
+
+    background:none;
+
+    border:none;
+
+    outline:none;
+
+    color:white;
+
+    font-size:18px;
+}
+
+.ai-search-glass input::placeholder{
+    color:rgba(255,255,255,.6);
+}
+
+.ai-search-glass button{
+
+    border:none;
+
+    padding:12px 22px;
+
+    border-radius:25px;
+
+    background:#00ff88;
+
+    color:black;
+
+    font-weight:bold;
+
+    cursor:pointer;
+
+    transition:.3s;
+}
+
+.ai-search-glass button:hover{
+    transform:scale(1.05);
+}
+
+.ai-search-result{
+
+    margin-top:20px;
+
+    max-height:0;
+
+    overflow:hidden;
+
+    opacity:0;
+
+    transform:translateY(-20px);
+
+    transition:.5s;
+}
+
+.ai-search-result.show{
+
+    max-height:1000px;
+
+    opacity:1;
+
+    transform:translateY(0);
+}
+
+.ai-result-content{
+
+    background:rgba(0,255,136,.08);
+
+    backdrop-filter:blur(15px);
+
+    border:1px solid rgba(0,255,136,.2);
+
+    border-radius:25px;
+
+    padding:25px;
+
+    color:white;
+
+    line-height:1.8;
+}
+
+.typing{
+    display:flex;
+    gap:6px;
+}
+
+.typing span{
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:#00ff88;
+    animation:bounce 1s infinite;
+}
+
+.typing span:nth-child(2){
+    animation-delay:.2s;
+}
+
+.typing span:nth-child(3){
+    animation-delay:.4s;
+}
+
+@keyframes bounce{
+
+    0%,100%{
+        transform:translateY(0);
+    }
+
+    50%{
+        transform:translateY(-8px);
+    }
+
+}
+
+</style>
 
 </section>
 
@@ -6020,6 +6200,99 @@ window.addEventListener("DOMContentLoaded", ()=>{
     };
 
 });
+
+</script>
+<script>
+
+const searchInput =
+document.getElementById("aiSearchInput");
+
+const searchBtn =
+document.getElementById("aiSearchBtn");
+
+const resultBox =
+document.getElementById("aiSearchResult");
+
+const resultContent =
+document.querySelector(".ai-result-content");
+
+const jarvisFrame =
+document.getElementById("jarvisFrame");
+
+function searchAI(){
+
+    const question =
+    searchInput.value.trim();
+
+    if(!question) return;
+
+    resultBox.classList.add("show");
+
+    resultContent.innerHTML = `
+        <div class="typing-green">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    `;
+
+    if(!jarvisFrame){
+
+        resultContent.innerHTML =
+        "Jarvis iframe not found.";
+
+        return;
+
+    }
+
+    jarvisFrame.contentWindow.postMessage({
+
+        type:"jarvis-question",
+
+        question:question
+
+    },"*");
+
+}
+
+window.addEventListener(
+    "message",
+    (event)=>{
+
+        if(
+            !event.data ||
+            event.data.type !==
+            "jarvis-answer"
+        ){
+            return;
+        }
+
+        resultContent.innerHTML =
+        event.data.answer
+        .replace(/\n/g,"<br>");
+
+    }
+);
+
+searchBtn.addEventListener(
+    "click",
+    searchAI
+);
+
+searchInput.addEventListener(
+    "keydown",
+    (e)=>{
+
+        if(e.key==="Enter"){
+
+            e.preventDefault();
+
+            searchAI();
+
+        }
+
+    }
+);
 
 </script>
 </body>

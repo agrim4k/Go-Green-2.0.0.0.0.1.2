@@ -393,6 +393,50 @@ async function ensureEngine() {
   setStatus("ready", "Jarvis is ready");
   return state.engine;
 }
+/* ===== GLOBAL SEARCH BAR ACCESS ===== */
+
+window.askJarvis = async function(question){
+
+    try{
+
+        const engine = await ensureEngine();
+
+        const response =
+        await engine.chat.completions.create({
+
+            messages:[
+                {
+                    role:"system",
+                    content:SYSTEM_PROMPT
+                },
+                {
+                    role:"user",
+                    content:question
+                }
+            ],
+
+            temperature:0.7,
+            max_tokens:512
+
+        });
+
+        return (
+            response?.choices?.[0]?.message?.content ||
+            "No response generated."
+        );
+
+    }
+    catch(error){
+
+        console.error(error);
+
+        return "Jarvis Error: " + error.message;
+
+    }
+
+};
+
+console.log("window.askJarvis registered successfully");
 async function handleSend(event) {
   event?.preventDefault();
 
@@ -1008,4 +1052,53 @@ window.downloadGeneratedImage = function(imageUrl) {
     console.error("Download failed:", error);
   }
 };
+window.addEventListener("message", async (event) => {
+
+    if (!event.data || event.data.type !== "jarvis-question") {
+        return;
+    }
+
+    try {
+
+        const engine = await ensureEngine();
+
+        const response =
+        await engine.chat.completions.create({
+
+            messages: [
+                {
+                    role: "system",
+                    content: SYSTEM_PROMPT
+                },
+                {
+                    role: "user",
+                    content: event.data.question
+                }
+            ],
+
+            temperature: 0.7,
+            max_tokens: 512
+
+        });
+
+        const answer =
+            response?.choices?.[0]?.message?.content ||
+            "No response generated.";
+
+        event.source.postMessage({
+            type: "jarvis-answer",
+            answer
+        }, "*");
+
+    }
+    catch (error) {
+
+        event.source.postMessage({
+            type: "jarvis-answer",
+            answer: "Jarvis Error: " + error.message
+        }, "*");
+
+    }
+
+});
 init();
