@@ -2283,6 +2283,21 @@ footer{
     );
 
 }
+.encrypt-tag{
+
+    font-size:10px;
+
+    color:#00ff88;
+
+    margin-bottom:6px;
+
+    text-transform:uppercase;
+
+    letter-spacing:1px;
+
+    opacity:.9;
+
+}
 </style>
 </head>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
@@ -2480,11 +2495,11 @@ MULTICHAT HTML
                 </button>
 
             </div>
-
+             
             <!-- ACTIVE ROOM -->
 
             <div class="active-room" id="active-room">
-                No friend connected
+                No friend connected        
             </div>
 
             <!-- MESSAGES -->
@@ -3194,17 +3209,87 @@ function loadMessages(){
             ? "chat-wrap me"
             : "chat-wrap other";
 
-            div.innerHTML = `
+            const isMe =
+data.sender === auth.currentUser.email;
 
-                <div class="chat-bubble">
-                    ${data.text}
-                </div>
+if(isMe){
 
-                <div class="chat-time">
-                    ${data.sender}
-                </div>
+    div.innerHTML = `
+        <div class="chat-bubble">
+            ${data.text}
+        </div>
 
-            `;
+        <div class="chat-time">
+            ${data.sender}
+        </div>
+    `;
+
+}else{
+
+    const id =
+    "msg_" +
+    Math.random()
+    .toString(36)
+    .slice(2);
+
+    div.innerHTML = `
+        <div class="chat-bubble">
+
+            <div class="encrypt-tag">
+                🔒 Encrypting...
+            </div>
+
+            <div id="${id}"></div>
+
+        </div>
+
+        <div class="chat-time">
+            ${data.sender}
+        </div>
+    `;
+
+    setTimeout(()=>{
+
+        decryptText(
+            id,
+            data.text
+        );
+
+    },200);
+}
+function decryptText(id,text){
+
+    const el =
+    document.getElementById(id);
+
+    if(!el) return;
+
+    let i = 0;
+
+    const timer =
+    setInterval(()=>{
+
+        el.textContent =
+        text.substring(0,i);
+
+        i++;
+
+        if(i > text.length){
+
+            clearInterval(timer);
+
+            const tag =
+            el.parentElement
+            .querySelector(".encrypt-tag");
+
+            tag.innerHTML =
+            "🔓 Decrypted";
+
+        }
+
+    },120);
+
+}
 
             multichatMessages
             .appendChild(div);

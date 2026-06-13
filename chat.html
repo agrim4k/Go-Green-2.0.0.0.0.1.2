@@ -487,7 +487,13 @@ import {
   onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
+import {
+  getDatabase,
+  ref,
+  set,
+  onDisconnect,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 /* =========================
    FIREBASE CONFIG
 ========================= */
@@ -510,11 +516,29 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 const db = getFirestore(app);
-
+const rtdb = getDatabase(app);
 const provider = new GoogleAuthProvider();
 
 let currentUser = null;
+function setupPresence(user){
 
+    const statusRef =
+    ref(
+        rtdb,
+        "status/" + user.uid
+    );
+
+    set(statusRef,{
+        online:true,
+        lastSeen:Date.now()
+    });
+
+    onDisconnect(statusRef).set({
+        online:false,
+        lastSeen:Date.now()
+    });
+
+}
 /* OPEN CLOSE */
 
 const openChat = document.getElementById("openChat");
@@ -560,6 +584,8 @@ onAuthStateChanged(auth, async (user)=>{
   if(user){
 
     currentUser = user;
+
+    setupPresence(user);
 
     document.getElementById("loginPage")
     .style.display = "none";
@@ -787,7 +813,51 @@ document
 };
 
 /* LOAD FRIENDS */
+function watchFriendStatus(friendUid){
 
+    const statusRef =
+    ref(
+        rtdb,
+        "status/" + friendUid
+    );
+
+    onValue(statusRef,(snapshot)=>{
+
+        const data =
+        snapshot.val();
+
+        const status =
+        document.getElementById(
+            "friendStatus"
+        );
+
+        if(!data){
+
+            status.innerHTML =
+            "⚪ Offline";
+
+            return;
+
+        }
+
+        if(data.online){
+
+            status.innerHTML =
+            "🟢 Online";
+
+        }else{
+
+            status.innerHTML =
+            "⚪ Last seen " +
+            new Date(
+                data.lastSeen
+            ).toLocaleString();
+
+        }
+
+    });
+
+}
 async function loadFriends(){
 
   const snapshot =
@@ -822,7 +892,34 @@ async function loadFriends(){
       ${data.email}
     `;
 
-    list.appendChild(div);
+    div.onclick = async ()=>{
+
+    const usersSnapshot =
+    await getDocs(
+        collection(db,"users")
+    );
+
+    usersSnapshot.forEach(userDoc=>{
+
+        const userData =
+        userDoc.data();
+
+        if(
+            userData.email ===
+            data.email
+        ){
+
+            watchFriendStatus(
+                userDoc.id
+            );
+
+        }
+
+    });
+
+};
+
+list.appendChild(div);
 
   });
 
