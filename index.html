@@ -3687,7 +3687,232 @@ function decryptText(id,text){
 
 }
 </style>
+<!-- Floating Button -->
+<button id="iprompt-btn">
+    <i class="fa-solid fa-wand-magic-sparkles"></i>
+</button>
+
+<!-- Popup -->
+<div id="iprompt-popup">
+
+    <div class="iprompt-window">
+
+        <div class="iprompt-topbar">
+
+            <h3>IPrompt Pro</h3>
+
+            <button id="close-iprompt">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+
+        </div>
+<iframe 
+  src="https://b2224ce8-48d3-47ab-a31e-26e979b7b9d9-00-i6a54gilpsx3.sisko.replit.dev" 
+  width="100%" 
+  height="800px" 
+  frameborder="0">
+</iframe>
+
+    </div>
+
+</div>
+<style>
+    /* Floating Button */
+
+#iprompt-btn{
+
+    position:fixed;
+
+    left:20px;
+
+    top:50%;
+
+    transform:translateY(-50%);
+
+    width:68px;
+    height:68px;
+
+    border:none;
+    border-radius:50%;
+
+    cursor:pointer;
+
+    background:linear-gradient(
+        135deg,
+        #00ff88,
+        #00c3ff
+    );
+
+    color:#fff;
+
+    font-size:26px;
+
+    z-index:999999;
+
+    box-shadow:
+        0 0 25px rgba(0,255,136,.45);
+
+    transition:.3s;
+}
+
+#iprompt-btn:hover{
+
+    transform:translateY(-50%) scale(1.08);
+
+}
+
+/* Popup */
+
+#iprompt-popup{
+
+    position:fixed;
+
+    left:100px;
+
+    top:50%;
+
+    transform:translateY(-50%);
+
+    width:430px;
+    height:720px;
+
+    display:none;
+
+    z-index:999999;
+
+}
+
+#iprompt-popup.active{
+
+    display:block;
+
+}
+
+/* Window */
+
+.iprompt-window{
+
+    width:100%;
+    height:100%;
+
+    background:#111827;
+
+    border-radius:24px;
+
+    overflow:hidden;
+
+    border:1px solid rgba(255,255,255,.08);
+
+    backdrop-filter:blur(20px);
+
+    box-shadow:
+        0 20px 60px rgba(0,0,0,.55),
+        0 0 30px rgba(0,255,136,.2);
+
+    animation:ipromptOpen .25s ease;
+
+}
+
+@keyframes ipromptOpen{
+
+    from{
+
+        opacity:0;
+        transform:translateX(-20px) scale(.96);
+
+    }
+
+    to{
+
+        opacity:1;
+        transform:translateX(0) scale(1);
+
+    }
+
+}
+
+/* Topbar */
+
+.iprompt-topbar{
+
+    height:60px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:space-between;
+
+    padding:0 18px;
+
+    background:linear-gradient(
+        90deg,
+        #00ff88,
+        #00c3ff
+    );
+
+    color:#000;
+
+}
+
+.iprompt-topbar h3{
+
+    margin:0;
+
+    font-size:18px;
+
+}
+
+/* Close Button */
+
+#close-iprompt{
+
+    width:38px;
+    height:38px;
+
+    border:none;
+
+    border-radius:10px;
+
+    cursor:pointer;
+
+    background:white;
+
+    font-size:18px;
+
+}
+
+/* Iframe */
+
+.iprompt-frame{
+
+    width:100%;
+
+    height:calc(100% - 60px);
+
+    border:none;
+
+}
+</style>
+<script>
+    const ipromptBtn = document.getElementById("iprompt-btn");
+const ipromptPopup = document.getElementById("iprompt-popup");
+const closeIprompt = document.getElementById("close-iprompt");
+
+ipromptBtn.onclick = () => {
+
+    ipromptPopup.classList.add("active");
+
+};
+
+closeIprompt.onclick = () => {
+
+    ipromptPopup.classList.remove("active");
+
+};
+</script>
 <body>
+
 
 <div class="cursor-dot"></div>
 <div class="cursor-outline"></div>
