@@ -1,916 +1,625 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import '../iprompt.css';
 
-const STORAGE_KEY = 'iprompt_pro_v2';
+// ── Storage helpers ────────────────────────────────────────────────────────────
+const KEYS_STORE = 'ip_apikeys_v2';
+const CHATS_STORE = 'ip_chats_v2';
 
+function getKeys(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(KEYS_STORE) ?? '{}'); } catch { return {}; }
+}
+function getKey(e: string) { return getKeys()[e] ?? ''; }
+function setKey(engine: string, val: string) {
+  const k = getKeys(); k[engine] = val;
+  localStorage.setItem(KEYS_STORE, JSON.stringify(k));
+}
+
+interface SavedChat { id: string; title: string; messages: Message[]; updatedAt: number; }
+
+function loadChats(): SavedChat[] {
+  try { return JSON.parse(localStorage.getItem(CHATS_STORE) ?? '[]'); } catch { return []; }
+}
+function saveChats(chats: SavedChat[]) {
+  localStorage.setItem(CHATS_STORE, JSON.stringify(chats));
+}
+function upsertChat(chat: SavedChat) {
+  const chats = loadChats();
+  const idx = chats.findIndex(c => c.id === chat.id);
+  if (idx >= 0) chats[idx] = chat; else chats.unshift(chat);
+  saveChats(chats);
+}
+function deleteChat(id: string) {
+  saveChats(loadChats().filter(c => c.id !== id));
+}
+
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+function relativeDate(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return 'just now';
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)}d ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
+// ── Markdown ──────────────────────────────────────────────────────────────────
+function escHtml(s: string) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function renderMarkdown(text: string): string {
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const l = lang || 'code';
+    const id = 'cb' + Math.random().toString(36).slice(2);
+    return `<div class="ip-code-block"><div class="ip-code-header"><span>${l}</span><button class="ip-copy-code" data-target="${id}">Copy</button></div><pre id="${id}">${escHtml(code.trim())}</pre></div>`;
+  });
+  text = text.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
+  text = text.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  text = text.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  text = text.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  text = text.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+  text = text.replace(/^---+$/gm, '<hr>');
+  text = text.replace(/(^[*\-] .+\n?)+/gm, m => {
+    const items = m.trim().split('\n').map(l => `<li>${l.replace(/^[*\-] /, '')}</li>`).join('');
+    return `<ul>${items}</ul>`;
+  });
+  text = text.replace(/(^\d+\. .+\n?)+/gm, m => {
+    const items = m.trim().split('\n').map(l => `<li>${l.replace(/^\d+\. /, '')}</li>`).join('');
+    return `<ol>${items}</ol>`;
+  });
+  text = text.split(/\n{2,}/).map(p => {
+    p = p.trim(); if (!p) return '';
+    if (/^<[huo]|<hr|<blockquote|<div/.test(p)) return p;
+    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
+  return text;
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Message { role: 'user' | 'assistant'; content: string; }
+
+const CHIPS = [
+  '✍️ Help me write a cover letter',
+  '💻 Explain recursion with examples',
+  '📖 Summarise this concept: blockchain',
+  '🎨 Describe a fantasy scene in poetic style',
+  '🚀 Give me 5 startup ideas for 2025',
+  '📊 How do I analyse data with Python?',
+];
+
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function IPromptPro() {
-  const initialized = useRef(false);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string>(() => newId());
+  const [historyChats, setHistoryChats] = useState<SavedChat[]>(() => loadChats());
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Simple toggle helper — accessible to JSX onClick
-  const toggleEl = (el: HTMLElement) => el.classList.toggle('on');
+  const [engine, setEngine] = useState('groq');
+  const [streaming, setStreaming] = useState(false);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [keyExpired, setKeyExpired] = useState(false);
+  const [modalEngine, setModalEngine] = useState('groq');
+  const [keyInput, setKeyInput] = useState('');
+  const [noKey, setNoKey] = useState(false);
 
-  useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
+  const [ppOpen, setPpOpen] = useState(false);
+  const [ppGoal, setPpGoal] = useState('chat');
+  const [ppKeywords, setPpKeywords] = useState<string[]>([]);
+  const [ppGenerating, setPpGenerating] = useState(false);
 
-    // ===== STATE =====
-    let currentGoal = 'chat';
-    let isGenerating = false;
-    let lastResult = '';
-    let keywords: string[] = [];
+  const [toastMsg, setToastMsg] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
 
-    // ===== HELPERS =====
-    function escapeHtml(s: string) {
-      return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    }
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+  const currentChatIdRef = useRef(currentChatId);
+  currentChatIdRef.current = currentChatId;
+  const chatAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    function toast(msg: string, dur = 2200) {
-      const el = document.getElementById('ip-toast');
-      if (!el) return;
-      el.textContent = msg;
-      el.classList.add('show');
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      toastTimerRef.current = setTimeout(() => el.classList.remove('show'), dur);
-    }
-
-    // ===== GOAL SWITCHING =====
-    const goalGrid = document.getElementById('ip-goalGrid');
-    goalGrid?.addEventListener('click', (e) => {
-      const btn = (e.target as HTMLElement).closest('.ip-goal-btn') as HTMLElement | null;
-      if (!btn) return;
-      document.querySelectorAll('.ip-goal-btn').forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      currentGoal = btn.dataset.goal ?? 'chat';
-      document.querySelectorAll('.ip-gp').forEach((p) => p.classList.remove('visible'));
-      document.getElementById('ip-gp-' + currentGoal)?.classList.add('visible');
-      updateOutputBadge();
-    });
-
-    function updateOutputBadge() {
-      const badge = document.getElementById('ip-outputBadge');
-      if (!badge) return;
-      const labels: Record<string, string> = { chat: 'Chat', code: 'Code', image: 'Image', blog: 'Blog', marketing: 'Marketing', agent: 'Agent' };
-      const classes: Record<string, string> = { chat: 'badge-chat', code: 'badge-code', image: 'badge-image', blog: 'badge-blog', marketing: 'badge-marketing', agent: 'badge-agent' };
-      badge.textContent = labels[currentGoal] ?? currentGoal;
-      badge.className = 'ip-output-badge ' + (classes[currentGoal] ?? 'badge-chat');
-    }
-
-    // ===== CHAR COUNTER =====
-    const ideaInput = document.getElementById('ip-ideaInput') as HTMLTextAreaElement | null;
-    ideaInput?.addEventListener('input', function () {
-      const counter = document.getElementById('ip-charCount');
-      if (counter) counter.textContent = String((this as HTMLTextAreaElement).value.length);
-    });
-
-    // ===== KEYWORD TAGS =====
-    const kwInput = document.getElementById('ip-kwInput') as HTMLInputElement | null;
-    kwInput?.addEventListener('keydown', (e) => {
-      const target = e.target as HTMLInputElement;
-      if ((e.key === 'Enter' || e.key === ',') && target.value.trim()) {
-        e.preventDefault();
-        addKeyword(target.value.trim().replace(',', ''));
-        target.value = '';
-      }
-    });
-
-    function addKeyword(kw: string) {
-      if (keywords.includes(kw)) return;
-      keywords.push(kw);
-      renderKeywords();
-    }
-
-    function removeKeyword(kw: string) {
-      keywords = keywords.filter((k) => k !== kw);
-      renderKeywords();
-    }
-
-    (window as unknown as Record<string, unknown>)['ip_removeKeyword'] = removeKeyword;
-
-    function renderKeywords() {
-      const wrap = document.getElementById('ip-kwTagsWrap');
-      const inp = document.getElementById('ip-kwInput') as HTMLInputElement | null;
-      if (!wrap || !inp) return;
-      wrap.innerHTML = '';
-      keywords.forEach((k) => {
-        const span = document.createElement('span');
-        span.className = 'ip-tag';
-        span.innerHTML = `${escapeHtml(k)} <span class="ip-tag-x" onclick="window.ip_removeKeyword('${escapeHtml(k)}')">×</span>`;
-        wrap.appendChild(span);
-      });
-      wrap.appendChild(inp);
-    }
-
-    // ===== PRESET PILLS =====
-    document.getElementById('ip-stylePills')?.addEventListener('click', (e) => {
-      const p = (e.target as HTMLElement).closest('.ip-preset-pill') as HTMLElement | null;
-      if (p) p.classList.toggle('on');
-    });
-
-    // ===== HISTORY =====
-    document.getElementById('ip-historyHeader')?.addEventListener('click', () => {
-      document.getElementById('ip-historyPanel')?.classList.toggle('open');
-    });
-
-    function getHistory(): Array<{ t: number; goal: string; idea: string; result: string }> {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'); } catch { return []; }
-    }
-
-    function saveHistory(entry: { t: number; goal: string; idea: string; result: string }) {
-      const arr = getHistory();
-      arr.unshift(entry);
-      if (arr.length > 100) arr.length = 100;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
-      renderHistory();
-    }
-
-    function renderHistory() {
-      const arr = getHistory();
-      const countEl = document.getElementById('ip-historyCount');
-      if (countEl) countEl.textContent = String(arr.length);
-      const list = document.getElementById('ip-historyList');
-      if (!list) return;
-      list.innerHTML = '';
-      if (!arr.length) {
-        list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">No history yet</div>';
-        return;
-      }
-      const colors: Record<string, string> = { chat: '#63b3ed', code: '#68d391', image: '#f6ad55', blog: '#9f7aea', marketing: '#fc8181', agent: '#68d391' };
-      arr.slice(0, 20).forEach((entry) => {
-        const div = document.createElement('div');
-        div.className = 'ip-history-item';
-        const t = new Date(entry.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        div.innerHTML = `
-          <div class="ip-history-dot" style="background:${colors[entry.goal] ?? '#63b3ed'}"></div>
-          <div class="ip-history-item-text">${escapeHtml(entry.idea?.slice(0, 60) ?? 'Prompt')}</div>
-          <div class="ip-history-item-time">${t}</div>`;
-        div.addEventListener('click', () => {
-          showOutput(entry.result, entry.goal);
-          toast('Loaded from history');
-        });
-        list.appendChild(div);
-      });
-    }
-
-    // ===== OUTPUT DISPLAY =====
-    function showOutput(text: string, goal: string) {
-      lastResult = text;
-      const emptyEl = document.getElementById('ip-outputEmpty');
-      const pre = document.getElementById('ip-outputPre') as HTMLPreElement | null;
-      if (emptyEl) emptyEl.style.display = 'none';
-      if (pre) { pre.style.display = 'block'; pre.textContent = text; }
-      const words = text.split(/\s+/).filter(Boolean).length;
-      const metaBar = document.getElementById('ip-metaBar');
-      if (metaBar) metaBar.style.display = 'flex';
-      const metaGoal = document.getElementById('ip-metaGoal');
-      const metaModel = document.getElementById('ip-metaModel');
-      const metaWords = document.getElementById('ip-metaWords');
-      const metaTime = document.getElementById('ip-metaTime');
-      const modelSelect = document.getElementById('ip-modelSelect') as HTMLSelectElement | null;
-      if (metaGoal) metaGoal.textContent = '🎯 ' + (goal || currentGoal);
-      if (metaModel) metaModel.textContent = '🤖 ' + (modelSelect?.value ?? '');
-      if (metaWords) metaWords.textContent = `📝 ${words} words`;
-      if (metaTime) metaTime.textContent = '⏱ ' + new Date().toLocaleTimeString();
-      updateOutputBadge();
-    }
-
-    // ===== COLLECT OPTIONS =====
-    function collectOptions() {
-      const goal = currentGoal;
-      const modelSelect = document.getElementById('ip-modelSelect') as HTMLSelectElement;
-      const verbosityEl = document.getElementById('ip-verbosity') as HTMLSelectElement;
-      const model = modelSelect?.value ?? 'claude';
-      const verbosity = verbosityEl?.value ?? 'detailed';
-      const idea = (document.getElementById('ip-ideaInput') as HTMLTextAreaElement)?.value.trim() ?? '';
-      const opts: Record<string, unknown> = { goal, model, verbosity, idea };
-
-      if (goal === 'chat') {
-        opts.audience = (document.getElementById('ip-chatAudience') as HTMLSelectElement)?.value;
-        opts.expertise = (document.getElementById('ip-chatExpertise') as HTMLSelectElement)?.value;
-        opts.tone = (document.getElementById('ip-chatTone') as HTMLSelectElement)?.value;
-        opts.examples = document.getElementById('ip-tog-examples')?.classList.contains('on');
-        opts.json = document.getElementById('ip-tog-json')?.classList.contains('on');
-        opts.followup = document.getElementById('ip-tog-followup')?.classList.contains('on');
-      } else if (goal === 'code') {
-        opts.lang = (document.getElementById('ip-codeLang') as HTMLSelectElement)?.value;
-        opts.scale = (document.getElementById('ip-codeScale') as HTMLSelectElement)?.value;
-        opts.reqs = (document.getElementById('ip-codeReqs') as HTMLInputElement)?.value;
-        opts.tests = document.getElementById('ip-tog-tests')?.classList.contains('on');
-        opts.deploy = document.getElementById('ip-tog-deploy')?.classList.contains('on');
-        opts.docker = document.getElementById('ip-tog-docker')?.classList.contains('on');
-      } else if (goal === 'image') {
-        const activePills = [...document.querySelectorAll('#ip-stylePills .ip-preset-pill.on')].map((p) => (p as HTMLElement).dataset.v ?? '');
-        opts.styles = activePills;
-        opts.aspect = (document.getElementById('ip-imgAspect') as HTMLSelectElement)?.value;
-        opts.quality = (document.getElementById('ip-imgQuality') as HTMLSelectElement)?.value;
-        opts.seeds = parseInt((document.getElementById('ip-imgSeeds') as HTMLInputElement)?.value ?? '3') || 3;
-        opts.negative = (document.getElementById('ip-imgNeg') as HTMLInputElement)?.value;
-      } else if (goal === 'blog') {
-        opts.length = (document.getElementById('ip-blogLength') as HTMLSelectElement)?.value;
-        opts.style = (document.getElementById('ip-blogStyle') as HTMLSelectElement)?.value;
-        opts.keywords = keywords;
-        opts.metaDesc = document.getElementById('ip-tog-meta')?.classList.contains('on');
-        opts.intro = document.getElementById('ip-tog-intro')?.classList.contains('on');
-        opts.internalLinks = document.getElementById('ip-tog-links')?.classList.contains('on');
-      } else if (goal === 'marketing') {
-        opts.channel = (document.getElementById('ip-mktChannel') as HTMLSelectElement)?.value;
-        opts.tone = (document.getElementById('ip-mktTone') as HTMLSelectElement)?.value;
-        opts.audience = (document.getElementById('ip-mktAudience') as HTMLInputElement)?.value;
-        opts.cta = (document.getElementById('ip-mktCta') as HTMLInputElement)?.value;
-      } else if (goal === 'agent') {
-        opts.role = (document.getElementById('ip-agentRole') as HTMLSelectElement)?.value;
-        opts.memory = (document.getElementById('ip-agentMemory') as HTMLSelectElement)?.value;
-        opts.tools = (document.getElementById('ip-agentTools') as HTMLInputElement)?.value;
-        opts.sysPrompt = document.getElementById('ip-tog-sysprompt')?.classList.contains('on');
-        opts.guardrails = document.getElementById('ip-tog-guardrails')?.classList.contains('on');
-        opts.examplesAgent = document.getElementById('ip-tog-examples-agent')?.classList.contains('on');
-      }
-      return opts;
-    }
-
-    // ===== BUILD META-PROMPT =====
-    function buildMetaPrompt(opts: Record<string, unknown>, isRegen: boolean) {
-      const regenNote = isRegen ? '\n\nIMPORTANT: This is a REGENERATION request. Produce a meaningfully different variation from the previous prompt — change the structure, angle, or emphasis.' : '';
-      const verbMap: Record<string, string> = { concise: 'concise and focused', detailed: 'detailed and thorough', exhaustive: 'exhaustive and comprehensive' };
-      const verbDesc = verbMap[opts.verbosity as string] ?? 'detailed';
-      let specificInstructions = '';
-
-      if (opts.goal === 'chat') {
-        specificInstructions = `
-GOAL: Generate a powerful CHAT / ASSISTANT prompt.
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-TARGET AUDIENCE: ${opts.audience}
-EXPERTISE LEVEL: ${opts.expertise}
-DESIRED TONE: ${opts.tone}
-VERBOSITY: ${verbDesc}
-INCLUDE EXAMPLES & ANALOGIES: ${opts.examples}
-INCLUDE JSON METADATA: ${opts.json}
-INCLUDE FOLLOW-UP QUESTIONS: ${opts.followup}
-
-Generate a prompt that:
-1. Sets up a clear, specific AI assistant persona tailored for ${opts.audience} at ${opts.expertise} level
-2. Defines the task with clear success criteria
-3. Specifies the expected output format and structure
-4. Uses "${opts.tone}" tone throughout
-5. ${opts.examples ? 'Includes a concrete example or worked analogy to illustrate the task' : 'Is direct without padding'}
-6. ${opts.followup ? 'Ends with 3 follow-up question starters the AI should ask' : ''}
-7. ${opts.json ? 'Appends a JSON-META block with: goal, audience, expertise, key_topics, constraints' : ''}
-
-The prompt must be natural, specific to the idea "${opts.idea}", and NOT a generic template.`;
-      } else if (opts.goal === 'code') {
-        specificInstructions = `
-GOAL: Generate a powerful CODE GENERATION prompt.
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-LANGUAGE / STACK: ${opts.lang}
-PROJECT SCALE: ${opts.scale}
-EXTRA REQUIREMENTS: ${opts.reqs || 'none'}
-VERBOSITY: ${verbDesc}
-INCLUDE TESTS: ${opts.tests}
-INCLUDE DEPLOYMENT: ${opts.deploy}
-INCLUDE DOCKER: ${opts.docker}
-
-Generate a prompt that:
-1. Frames the coding task precisely with technical context for "${opts.idea}"
-2. Specifies ${opts.lang} with idiomatic patterns and best practices
-3. Defines the scope (${opts.scale}) and deliverables clearly
-4. ${opts.reqs ? `Enforces these constraints: ${opts.reqs}` : 'Uses sensible defaults'}
-5. Requests: architecture overview, file tree, full working code for key files
-6. ${opts.tests ? 'Requires unit tests with edge cases' : ''}
-7. ${opts.deploy ? 'Requires deployment steps with exact commands' : ''}
-8. ${opts.docker ? 'Requires a Dockerfile and docker-compose.yml' : ''}
-9. Specifies error handling, logging, and security considerations`;
-      } else if (opts.goal === 'image') {
-        const styles = (opts.styles as string[])?.join(', ') || 'cinematic lighting';
-        specificInstructions = `
-GOAL: Generate ${opts.seeds} optimized IMAGE GENERATION prompts (variations/seeds).
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-ACTIVE STYLE PRESETS: ${styles}
-ASPECT RATIO: ${opts.aspect}
-QUALITY: ${opts.quality}
-NEGATIVE PROMPTS: ${opts.negative || 'blur, watermark, text, deformed'}
-
-For each of the ${opts.seeds} variations, generate:
-1. A rich, evocative main prompt that expands "${opts.idea}" with subject description, environment/setting, lighting (${styles}), artistic medium, camera/composition notes, and quality modifiers
-2. Model-specific syntax (e.g., --ar ${opts.aspect} for Midjourney)
-3. A random seed value
-4. Negative prompt block
-5. A short JSON-META block per variation
-
-Make each variation meaningfully DIFFERENT (different mood, angle, color palette, composition).`;
-      } else if (opts.goal === 'blog') {
-        const kwStr = (opts.keywords as string[])?.length ? (opts.keywords as string[]).join(', ') : 'none specified';
-        specificInstructions = `
-GOAL: Generate a comprehensive BLOG POST PROMPT / BRIEF.
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-POST LENGTH: ${opts.length}
-WRITING STYLE: ${opts.style}
-SEO KEYWORDS: ${kwStr}
-VERBOSITY: ${verbDesc}
-INCLUDE META DESCRIPTION: ${opts.metaDesc}
-INCLUDE SAMPLE INTRO: ${opts.intro}
-INCLUDE INTERNAL LINK SUGGESTIONS: ${opts.internalLinks}
-
-Generate a prompt that instructs an AI to write a ${opts.style} blog post about "${opts.idea}" with title, structured sections, keyword integration, CTA, and consistent voice.`;
-      } else if (opts.goal === 'marketing') {
-        specificInstructions = `
-GOAL: Generate a MARKETING COPY prompt.
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-CHANNEL: ${opts.channel}
-TONE: ${opts.tone}
-TARGET AUDIENCE: ${opts.audience || 'to be inferred'}
-MAIN CTA: ${opts.cta || 'to be determined'}
-VERBOSITY: ${verbDesc}
-
-Generate a prompt for ${opts.channel} marketing copy for "${opts.idea}" with headline, copy variations, value propositions, CTAs, and tone guidelines.`;
-      } else if (opts.goal === 'agent') {
-        specificInstructions = `
-GOAL: Generate a complete AI AGENT SYSTEM PROMPT.
-USER IDEA: "${opts.idea}"
-TARGET MODEL: ${opts.model}
-AGENT ROLE: ${opts.role}
-MEMORY TYPE: ${opts.memory}
-AVAILABLE TOOLS: ${opts.tools || 'none'}
-VERBOSITY: ${verbDesc}
-INCLUDE SYSTEM PROMPT TEMPLATE: ${opts.sysPrompt}
-INCLUDE GUARDRAILS: ${opts.guardrails}
-INCLUDE EXAMPLE CONVERSATIONS: ${opts.examplesAgent}
-
-Generate a complete agent configuration for "${opts.idea}" with role definition, behavioral guidelines, ${opts.tools ? `tool instructions for: ${opts.tools}` : ''}, ${opts.guardrails ? 'guardrails,' : ''} and ${opts.examplesAgent ? 'example conversation turns.' : 'response format preferences.'}`;
-      }
-
-      return `You are an expert prompt engineer with deep knowledge of ${opts.model} and AI systems.
-
-Your task is to generate a ${verbDesc} prompt based on the user's idea. The prompt you generate will be USED DIRECTLY in ${opts.model} — so it must be precise, natural, and powerful.
-
-${specificInstructions}
-
-CRITICAL RULES:
-- The output should be the ACTUAL PROMPT TEXT the user will paste into ${opts.model}
-- Do NOT wrap in markdown code blocks
-- Do NOT add meta-commentary like "Here is your prompt:" — just output the prompt
-- Every element must be tailored to the specific idea: "${opts.idea}"
-- Make it feel like it was written by a domain expert, not generated by a template
-${regenNote}`;
-    }
-
-    // ===== GENERATE =====
-    async function generate(isRegen = false) {
-      const idea = (document.getElementById('ip-ideaInput') as HTMLTextAreaElement)?.value.trim() ?? '';
-      if (!idea) { toast('⚠ Please enter an idea first'); return; }
-      if (isGenerating) return;
-
-      isGenerating = true;
-      const generateBtn = document.getElementById('ip-generateBtn') as HTMLButtonElement;
-      const spinner = document.getElementById('ip-spinner');
-      const btnLabel = document.getElementById('ip-btnLabel');
-      const outputBox = document.getElementById('ip-outputBox');
-      const outputEmpty = document.getElementById('ip-outputEmpty');
-      const pre = document.getElementById('ip-outputPre') as HTMLPreElement;
-
-      if (generateBtn) generateBtn.disabled = true;
-      if (spinner) spinner.style.display = 'flex';
-      if (btnLabel) btnLabel.textContent = 'Generating…';
-      if (outputBox) outputBox.classList.add('loading');
-      if (outputEmpty) outputEmpty.style.display = 'none';
-      if (pre) { pre.style.display = 'block'; pre.textContent = ''; }
-
-      const opts = collectOptions();
-      const metaPrompt = buildMetaPrompt(opts, isRegen);
-
-      try {
-        const engineEl = document.getElementById('ip-engineSelect') as HTMLSelectElement | null;
-        const engine = engineEl?.value ?? 'groq';
-        const genModel = engine === 'gemini' ? 'gemini-2.0-flash' : 'llama-3.3-70b-versatile';
-
-        const response = await fetch('/api/claude/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            provider: engine,
-            model: genModel,
-            max_tokens: 1800,
-            messages: [{ role: 'user', content: metaPrompt }],
-          }),
-        });
-
-        if (!response.ok) {
-          const err = await response.text();
-          throw new Error(`API error: ${response.status} — ${err}`);
-        }
-
-        const reader = response.body!.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim();
-              if (data === '[DONE]') continue;
-              try {
-                const parsed = JSON.parse(data);
-                const chunk =
-                  parsed.text ??
-                  (parsed.type === 'content_block_delta' ? parsed.delta?.text : undefined);
-                if (chunk) {
-                  fullText += chunk;
-                  if (pre) { pre.textContent = fullText; pre.scrollTop = pre.scrollHeight; }
-                }
-              } catch { /* skip malformed */ }
-            }
-          }
-        }
-
-        lastResult = fullText;
-        showOutput(fullText, opts.goal as string);
-        saveHistory({ t: Date.now(), goal: opts.goal as string, idea: opts.idea as string, result: fullText });
-        toast('✦ Prompt generated!');
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (pre) pre.textContent = `Error: ${msg}\n\nCheck that your API key is valid and the server is running.`;
-        toast('⚠ Generation failed');
-      } finally {
-        isGenerating = false;
-        if (generateBtn) generateBtn.disabled = false;
-        if (spinner) spinner.style.display = 'none';
-        if (btnLabel) btnLabel.textContent = '✦ Generate Prompt';
-        if (outputBox) outputBox.classList.remove('loading');
-      }
-    }
-
-    // ===== BUTTONS =====
-    document.getElementById('ip-generateBtn')?.addEventListener('click', () => generate(false));
-    document.getElementById('ip-regenBtn')?.addEventListener('click', () => generate(true));
-    document.getElementById('ip-ideaInput')?.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') generate(false);
-    });
-
-    document.getElementById('ip-copyBtn')?.addEventListener('click', async () => {
-      if (!lastResult) { toast('Nothing to copy'); return; }
-      try {
-        await navigator.clipboard.writeText(lastResult);
-        const btn = document.getElementById('ip-copyBtn');
-        if (btn) { btn.textContent = '✓ Copied!'; btn.classList.add('success'); }
-        toast('Copied to clipboard!');
-        setTimeout(() => {
-          const b = document.getElementById('ip-copyBtn');
-          if (b) { b.textContent = '⎘ Copy'; b.classList.remove('success'); }
-        }, 2000);
-      } catch { toast('Copy failed — try selecting manually'); }
-    });
-
-    document.getElementById('ip-downloadBtn')?.addEventListener('click', () => {
-      if (!lastResult) { toast('Nothing to download'); return; }
-      const blob = new Blob([lastResult], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `iprompt-${currentGoal}-${Date.now()}.txt`;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 300);
-      toast('Downloaded!');
-    });
-
-    document.getElementById('ip-exportBtn')?.addEventListener('click', () => {
-      const arr = getHistory();
-      if (!arr.length) { toast('No history to export'); return; }
-      const blob = new Blob([JSON.stringify(arr, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `iprompt-history-${Date.now()}.json`;
-      document.body.appendChild(a); a.click();
-      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 300);
-      toast('History exported!');
-    });
-
-    document.getElementById('ip-clearBtn')?.addEventListener('click', () => {
-      lastResult = '';
-      const pre = document.getElementById('ip-outputPre');
-      const empty = document.getElementById('ip-outputEmpty');
-      const meta = document.getElementById('ip-metaBar');
-      if (pre) pre.style.display = 'none';
-      if (empty) empty.style.display = 'flex';
-      if (meta) meta.style.display = 'none';
-    });
-
-    // ===== INIT =====
-    renderHistory();
-    updateOutputBadge();
+  const toast = useCallback((msg: string) => {
+    setToastMsg(msg); setToastVisible(true);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToastVisible(false), 2400);
   }, []);
 
+  useEffect(() => {
+    const key = getKey('groq') || getKey('gemini');
+    if (!key) { setShowKeyModal(true); setNoKey(true); }
+    else { setEngine(getKey('groq') ? 'groq' : 'gemini'); }
+    document.addEventListener('click', e => {
+      const btn = (e.target as HTMLElement).closest('.ip-copy-code') as HTMLElement | null;
+      if (!btn) return;
+      const pre = document.getElementById(btn.dataset.target ?? '');
+      if (pre) navigator.clipboard.writeText(pre.textContent ?? '').then(() => toast('Code copied!'));
+    });
+  }, [toast]);
+
+  useEffect(() => { setNoKey(!getKey(engine)); }, [engine]);
+
+  const scrollDown = () => { const a = chatAreaRef.current; if (a) a.scrollTop = a.scrollHeight; };
+
+  // Render messages from state into DOM (used when loading a past chat)
+  const renderMessagesIntoDom = useCallback((msgs: Message[]) => {
+    const area = chatAreaRef.current;
+    if (!area) return;
+    area.innerHTML = '';
+    for (const m of msgs) {
+      const el = document.createElement('div');
+      el.className = `ip-msg ${m.role === 'user' ? 'user' : 'ai'}`;
+      if (m.role === 'user') {
+        el.innerHTML = `<div class="ip-avatar user">🧑</div><div class="ip-bubble">${escHtml(m.content).replace(/\n/g, '<br>')}</div>`;
+      } else {
+        el.innerHTML = `<div class="ip-avatar ai">iP</div><div class="ip-bubble">${renderMarkdown(m.content)}</div>`;
+      }
+      area.appendChild(el);
+    }
+    setTimeout(scrollDown, 50);
+  }, []);
+
+  const sendMessage = useCallback(async (textOverride?: string) => {
+    const input = inputRef.current;
+    const text = (textOverride ?? input?.value ?? '').trim();
+    if (!text || streaming) return;
+    const apiKey = getKey(engine);
+    if (!apiKey) { setModalEngine(engine); setKeyExpired(false); setShowKeyModal(true); return; }
+    if (input) { input.value = ''; input.style.height = 'auto'; }
+
+    // append user bubble to DOM
+    const area = chatAreaRef.current;
+    const userEl = document.createElement('div'); userEl.className = 'ip-msg user';
+    userEl.innerHTML = `<div class="ip-avatar user">🧑</div><div class="ip-bubble">${escHtml(text).replace(/\n/g, '<br>')}</div>`;
+    area?.appendChild(userEl);
+
+    const newMessages: Message[] = [...messagesRef.current, { role: 'user', content: text }];
+    setMessages(newMessages);
+    setStreaming(true);
+    setTimeout(scrollDown, 40);
+
+    const SYSTEM = 'You are a helpful, knowledgeable AI assistant. Answer clearly and naturally. Use markdown formatting when it helps — headers, code blocks, bullet lists. Be concise unless depth is needed.';
+
+    const typingEl = document.createElement('div');
+    typingEl.className = 'ip-msg ai'; typingEl.id = 'ip-typing';
+    typingEl.innerHTML = '<div class="ip-avatar ai">iP</div><div class="ip-bubble"><div class="ip-typing"><span></span><span></span><span></span></div></div>';
+    area?.appendChild(typingEl); scrollDown();
+
+    let fullText = '';
+    try {
+      let res: Response;
+      if (engine === 'groq') {
+        res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey },
+          body: JSON.stringify({ model: 'llama-3.3-70b-versatile', stream: true, messages: [{ role: 'system', content: SYSTEM }, ...newMessages.map(m => ({ role: m.role, content: m.content }))] }),
+        });
+      } else {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+        const history = newMessages.slice(0, -1).map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+        res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [...history, { role: 'user', parts: [{ text }] }], systemInstruction: { parts: [{ text: SYSTEM }] }, generationConfig: { maxOutputTokens: 2048 } }) });
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        document.getElementById('ip-typing')?.remove();
+        setKeyExpired(true); setModalEngine(engine); setShowKeyModal(true);
+        throw new Error('auth');
+      }
+      if (!res.ok) throw new Error(`${res.status}`);
+
+      document.getElementById('ip-typing')?.remove();
+      const msgEl = document.createElement('div'); msgEl.className = 'ip-msg ai';
+      const av = document.createElement('div'); av.className = 'ip-avatar ai'; av.textContent = 'iP';
+      const bub = document.createElement('div'); bub.className = 'ip-bubble';
+      msgEl.appendChild(av); msgEl.appendChild(bub);
+      area?.appendChild(msgEl);
+
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      if (engine === 'groq') {
+        outer: while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          for (const line of dec.decode(value, { stream: true }).split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const d = line.slice(6).trim(); if (d === '[DONE]') break outer;
+            try { const t = JSON.parse(d).choices?.[0]?.delta?.content; if (t) { fullText += t; bub.innerHTML = renderMarkdown(fullText); scrollDown(); } } catch { /**/ }
+          }
+        }
+      } else {
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          for (const line of dec.decode(value, { stream: true }).split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try { const t = JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.[0]?.text; if (t) { fullText += t; bub.innerHTML = renderMarkdown(fullText); scrollDown(); } } catch { /**/ }
+          }
+        }
+      }
+
+      const finalMessages: Message[] = [...newMessages, { role: 'assistant', content: fullText }];
+      setMessages(finalMessages);
+
+      // Save to history
+      const chatId = currentChatIdRef.current;
+      const title = text.slice(0, 60) + (text.length > 60 ? '…' : '');
+      const saved: SavedChat = { id: chatId, title, messages: finalMessages, updatedAt: Date.now() };
+      upsertChat(saved);
+      setHistoryChats(loadChats());
+
+    } catch (err: unknown) {
+      document.getElementById('ip-typing')?.remove();
+      if ((err as Error).message !== 'auth') {
+        const errEl = document.createElement('div'); errEl.className = 'ip-msg ai';
+        errEl.innerHTML = `<div class="ip-avatar ai">iP</div><div class="ip-bubble">⚠ Something went wrong. Try again.</div>`;
+        area?.appendChild(errEl);
+      }
+    } finally {
+      setStreaming(false);
+      setTimeout(() => inputRef.current?.focus(), 80);
+    }
+  }, [engine, streaming]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+  const autoResize = (el: HTMLTextAreaElement) => {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+  };
+
+  const startNewChat = () => {
+    setMessages([]);
+    setCurrentChatId(newId());
+    if (chatAreaRef.current) chatAreaRef.current.innerHTML = '';
+    if (inputRef.current) { inputRef.current.value = ''; inputRef.current.style.height = 'auto'; }
+    setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 80);
+  };
+
+  const loadChat = (chat: SavedChat) => {
+    setMessages(chat.messages);
+    setCurrentChatId(chat.id);
+    renderMessagesIntoDom(chat.messages);
+    setSidebarOpen(false);
+    setTimeout(() => inputRef.current?.focus(), 80);
+  };
+
+  const removeChatFromHistory = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    deleteChat(id);
+    const updated = loadChats();
+    setHistoryChats(updated);
+    if (id === currentChatId) startNewChat();
+  };
+
+  const saveKey = () => {
+    if (!keyInput.trim()) { toast('⚠ Enter a key'); return; }
+    setKey(modalEngine, keyInput.trim());
+    setEngine(modalEngine); setKeyInput(''); setShowKeyModal(false); setNoKey(false);
+    toast('✓ Key saved!');
+  };
+
+  // ── Prompt builder ────────────────────────────────────────────────────────
+  const buildPpPrompt = (): string | null => {
+    const idea = (document.getElementById('pp-idea') as HTMLTextAreaElement)?.value.trim();
+    if (!idea) return null;
+    let si = '';
+    if (ppGoal === 'chat') {
+      const aud = (document.getElementById('pp-chat-aud') as HTMLSelectElement)?.value;
+      const exp = (document.getElementById('pp-chat-exp') as HTMLSelectElement)?.value;
+      const tone = (document.getElementById('pp-chat-tone') as HTMLSelectElement)?.value;
+      const ex = document.getElementById('pp-tog1')?.classList.contains('on');
+      si = `Chat/assistant prompt for: "${idea}". Audience: ${aud}, expertise: ${exp}, tone: ${tone}. ${ex ? 'Include examples.' : ''}`;
+    } else if (ppGoal === 'code') {
+      const lang = (document.getElementById('pp-code-lang') as HTMLSelectElement)?.value;
+      const scale = (document.getElementById('pp-code-scale') as HTMLSelectElement)?.value;
+      const reqs = (document.getElementById('pp-code-reqs') as HTMLInputElement)?.value;
+      const tests = document.getElementById('pp-tog2')?.classList.contains('on');
+      si = `Code generation prompt for: "${idea}". Language: ${lang}, scale: ${scale}. ${reqs ? 'Requirements: ' + reqs : ''} ${tests ? 'Include tests.' : ''}`;
+    } else if (ppGoal === 'image') {
+      const styles = [...document.querySelectorAll('#pp-style-pills .ip-pill.on')].map(p => (p as HTMLElement).dataset.v).join(', ');
+      const aspect = (document.getElementById('pp-aspect') as HTMLSelectElement)?.value;
+      const seeds = (document.getElementById('pp-seeds') as HTMLInputElement)?.value;
+      si = `Image generation prompt for: "${idea}". Styles: ${styles || 'cinematic'}, aspect: ${aspect}, variations: ${seeds}.`;
+    } else if (ppGoal === 'blog') {
+      const len = (document.getElementById('pp-blog-len') as HTMLSelectElement)?.value;
+      const style = (document.getElementById('pp-blog-style') as HTMLSelectElement)?.value;
+      si = `Blog post prompt for: "${idea}". Length: ${len}, style: ${style}. ${ppKeywords.length ? 'SEO keywords: ' + ppKeywords.join(', ') : ''}`;
+    } else if (ppGoal === 'marketing') {
+      const ch = (document.getElementById('pp-mkt-ch') as HTMLSelectElement)?.value;
+      const tone = (document.getElementById('pp-mkt-tone') as HTMLSelectElement)?.value;
+      const aud = (document.getElementById('pp-mkt-aud') as HTMLInputElement)?.value;
+      si = `${ch} marketing copy prompt for: "${idea}". Tone: ${tone}. ${aud ? 'Audience: ' + aud : ''}`;
+    } else if (ppGoal === 'agent') {
+      const role = (document.getElementById('pp-agent-role') as HTMLSelectElement)?.value;
+      const tools = (document.getElementById('pp-agent-tools') as HTMLInputElement)?.value;
+      const guard = document.getElementById('pp-tog3')?.classList.contains('on');
+      si = `AI agent system prompt for: "${idea}". Role: ${role}. ${tools ? 'Tools: ' + tools : ''} ${guard ? 'Include guardrails.' : ''}`;
+    }
+    return `You are an expert prompt engineer. Generate a precise, production-ready prompt based on:\n\n${si}\n\nOutput ONLY the final prompt text. No preamble, no code fences.`;
+  };
+
+  const generatePrompt = async () => {
+    const apiKey = getKey(engine);
+    if (!apiKey) { setModalEngine(engine); setShowKeyModal(true); return; }
+    const meta = buildPpPrompt();
+    if (!meta) { toast('⚠ Enter your idea first'); return; }
+    setPpGenerating(true);
+    let result = '';
+    try {
+      if (engine === 'groq') {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey }, body: JSON.stringify({ model: 'llama-3.3-70b-versatile', stream: true, messages: [{ role: 'user', content: meta }] }) });
+        if (!res.ok) throw new Error('Groq ' + res.status);
+        const reader = res.body!.getReader(); const dec = new TextDecoder();
+        outer: while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          for (const line of dec.decode(value, { stream: true }).split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            const d = line.slice(6).trim(); if (d === '[DONE]') break outer;
+            try { const t = JSON.parse(d).choices?.[0]?.delta?.content; if (t) result += t; } catch { /**/ }
+          }
+        }
+      } else {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: meta }] }], generationConfig: { maxOutputTokens: 1800 } }) });
+        if (!res.ok) throw new Error('Gemini ' + res.status);
+        const reader = res.body!.getReader(); const dec = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read(); if (done) break;
+          for (const line of dec.decode(value, { stream: true }).split('\n')) {
+            if (!line.startsWith('data: ')) continue;
+            try { const t = JSON.parse(line.slice(6)).candidates?.[0]?.content?.parts?.[0]?.text; if (t) result += t; } catch { /**/ }
+          }
+        }
+      }
+      if (result && inputRef.current) {
+        inputRef.current.value = result.trim();
+        autoResize(inputRef.current);
+        setPpOpen(false);
+        inputRef.current.focus();
+        toast('✦ Prompt ready — press Enter to send!');
+      }
+    } catch { toast('⚠ Generation failed'); }
+    finally { setPpGenerating(false); }
+  };
+
+  // ── Group chats by date ───────────────────────────────────────────────────
+  const groupChats = () => {
+    const today: SavedChat[] = [], week: SavedChat[] = [], older: SavedChat[] = [];
+    const now = Date.now();
+    for (const c of historyChats) {
+      const diff = now - c.updatedAt;
+      if (diff < 86_400_000) today.push(c);
+      else if (diff < 7 * 86_400_000) week.push(c);
+      else older.push(c);
+    }
+    return { today, week, older };
+  };
+  const { today, week, older } = groupChats();
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
-      <div className="ip-app">
-        {/* HEADER */}
-        <header className="ip-header">
-          <div className="ip-header-left">
-            <div className="ip-logo-mark">iP</div>
-            <div>
-              <div className="ip-header-title">iPrompt <span style={{ color: 'var(--accent)' }}>Pro</span></div>
-              <div className="ip-header-sub">AI-powered prompt engineering for every use case</div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <select id="ip-engineSelect" className="ip-btn-ghost" style={{ cursor: 'pointer', paddingRight: 28 }}>
-              <option value="groq">⚡ Groq — Llama 3.3</option>
-              <option value="gemini">✦ Gemini 2.0 Flash</option>
+      {/* KEY MODAL */}
+      <div className={`ip-modal-overlay${showKeyModal ? ' show' : ''}`}>
+        <div className="ip-modal">
+          <div className="ip-modal-title">🔑 {keyExpired ? 'Key Rejected' : 'API Key Required'}</div>
+          <div className="ip-modal-sub">{keyExpired ? 'Your API key was rejected. Update it to continue.' : 'Enter your key — saved in your browser only, never shared.'}</div>
+          <div className="ip-field">
+            <label className="ip-fl">Engine</label>
+            <select value={modalEngine} onChange={e => setModalEngine(e.target.value)} style={{ width: '100%', background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 'var(--rs)', color: 'var(--text)', fontFamily: 'DM Sans,sans-serif', fontSize: 13, padding: '9px 11px', outline: 'none', appearance: 'none' }}>
+              <option value="groq">⚡ Groq — Llama 3.3 (free tier)</option>
+              <option value="gemini">✦ Gemini 2.0 Flash (Google AI Studio)</option>
             </select>
-            <button className="ip-btn-ghost" id="ip-exportBtn">↓ Export History</button>
           </div>
-        </header>
-
-        {/* MAIN LAYOUT */}
-        <div className="ip-layout">
-
-          {/* LEFT PANEL */}
-          <div>
-            <div className="ip-panel">
-              <div className="ip-section-label">Prompt Goal</div>
-              <div className="ip-goal-grid" id="ip-goalGrid">
-                <button className="ip-goal-btn active" data-goal="chat"><span className="ip-icon">💬</span>Chat / QA</button>
-                <button className="ip-goal-btn" data-goal="code"><span className="ip-icon">💻</span>Code</button>
-                <button className="ip-goal-btn" data-goal="image"><span className="ip-icon">🎨</span>Image AI</button>
-                <button className="ip-goal-btn" data-goal="blog"><span className="ip-icon">✍️</span>Blog / SEO</button>
-                <button className="ip-goal-btn" data-goal="marketing"><span className="ip-icon">📣</span>Marketing</button>
-                <button className="ip-goal-btn" data-goal="agent"><span className="ip-icon">🤖</span>AI Agent</button>
-              </div>
-
-              <div className="ip-field">
-                <label className="ip-field-label">Your Idea</label>
-                <textarea id="ip-ideaInput" placeholder="Describe what you need… e.g. 'A meditation app for busy professionals' or 'Generate a cyberpunk portrait'"></textarea>
-                <div className="ip-char-counter"><span id="ip-charCount">0</span> / 100000</div>
-              </div>
-
-              <div className="ip-row2">
-                <div className="ip-field">
-                  <label className="ip-field-label">Model Target</label>
-                  <select id="ip-modelSelect">
-                    <option value="claude">Claude</option>
-                    <option value="chatgpt">ChatGPT / GPT-4</option>
-                    <option value="gemini">Gemini</option>
-                    <option value="midjourney">Midjourney</option>
-                    <option value="stable-diffusion">Stable Diffusion</option>
-                    <option value="dall-e">DALL·E 3</option>
-                    <option value="generic">Generic / Any</option>
-                  </select>
-                </div>
-                <div className="ip-field">
-                  <label className="ip-field-label">Output Detail</label>
-                  <select id="ip-verbosity" defaultValue="detailed">
-                    <option value="concise">Concise</option>
-                    <option value="detailed">Detailed</option>
-                    <option value="exhaustive">Exhaustive</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* GOAL-SPECIFIC PANELS */}
-              <div className="ip-goal-panels">
-
-                {/* CHAT */}
-                <div className="ip-gp visible" id="ip-gp-chat">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>Chat Options</div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Audience</label>
-                      <select id="ip-chatAudience">
-                        <option>General public</option>
-                        <option>Developers</option>
-                        <option>Product Managers</option>
-                        <option>Students</option>
-                        <option>Executives</option>
-                        <option>Beginners</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Expertise Level</label>
-                      <select id="ip-chatExpertise" defaultValue="intermediate">
-                        <option value="beginner">Beginner</option>
-                        <option value="intermediate">Intermediate</option>
-                        <option value="expert">Expert</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">Style / Tone</label>
-                    <select id="ip-chatTone">
-                      <option>Informative &amp; Neutral</option>
-                      <option>Friendly &amp; Conversational</option>
-                      <option>Socratic (asks questions)</option>
-                      <option>Direct &amp; Concise</option>
-                      <option>Structured &amp; Formal</option>
-                    </select>
-                  </div>
-                  <div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include examples &amp; analogies</span>
-                      <div className="ip-toggle on" id="ip-tog-examples" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Add JSON metadata block</span>
-                      <div className="ip-toggle on" id="ip-tog-json" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include follow-up questions</span>
-                      <div className="ip-toggle" id="ip-tog-followup" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* CODE */}
-                <div className="ip-gp" id="ip-gp-code">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>Code Options</div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Language / Stack</label>
-                      <select id="ip-codeLang">
-                        <option value="python">Python</option>
-                        <option value="typescript">TypeScript</option>
-                        <option value="javascript">JavaScript</option>
-                        <option value="react">React</option>
-                        <option value="node">Node.js</option>
-                        <option value="go">Go</option>
-                        <option value="rust">Rust</option>
-                        <option value="swift">Swift</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Project Scale</label>
-                      <select id="ip-codeScale" defaultValue="service">
-                        <option value="snippet">Snippet</option>
-                        <option value="module">Module / Class</option>
-                        <option value="service">Full Service</option>
-                        <option value="fullstack">Full Stack App</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">Requirements / Constraints</label>
-                    <input type="text" id="ip-codeReqs" placeholder="e.g. must use SQLite, no ORM, async/await..." />
-                  </div>
-                  <div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include tests</span>
-                      <div className="ip-toggle on" id="ip-tog-tests" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include deployment steps</span>
-                      <div className="ip-toggle" id="ip-tog-deploy" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include Docker setup</span>
-                      <div className="ip-toggle" id="ip-tog-docker" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* IMAGE */}
-                <div className="ip-gp" id="ip-gp-image">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>Image Options</div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">Style Presets (multi-select)</label>
-                    <div className="ip-preset-pills" id="ip-stylePills">
-                      <span className="ip-preset-pill on" data-v="cinematic lighting, dramatic atmosphere">Cinematic</span>
-                      <span className="ip-preset-pill" data-v="concept art, digital painting, volumetric light">Concept Art</span>
-                      <span className="ip-preset-pill" data-v="photorealistic, 8k, DSLR, bokeh">Photorealistic</span>
-                      <span className="ip-preset-pill" data-v="anime style, cel shading, vibrant colors">Anime</span>
-                      <span className="ip-preset-pill" data-v="watercolor, soft brush strokes, muted palette">Watercolor</span>
-                      <span className="ip-preset-pill" data-v="fantasy art, epic, magical, ornate">Fantasy</span>
-                      <span className="ip-preset-pill" data-v="minimalist, clean, geometric, flat design">Minimalist</span>
-                      <span className="ip-preset-pill" data-v="cyberpunk, neon, futuristic, dark city">Cyberpunk</span>
-                    </div>
-                  </div>
-                  <div className="ip-row3">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Aspect Ratio</label>
-                      <select id="ip-imgAspect" defaultValue="2:3">
-                        <option value="1:1">1:1 Square</option>
-                        <option value="16:9">16:9 Wide</option>
-                        <option value="2:3">2:3 Portrait</option>
-                        <option value="3:4">3:4 Portrait</option>
-                        <option value="4:5">4:5 Social</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Quality</label>
-                      <select id="ip-imgQuality" defaultValue="high">
-                        <option value="standard">Standard</option>
-                        <option value="high">High</option>
-                        <option value="ultra">Ultra</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Variations</label>
-                      <input type="number" id="ip-imgSeeds" min={1} max={5} defaultValue={3} />
-                    </div>
-                  </div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">Negative Prompts</label>
-                    <input type="text" id="ip-imgNeg" placeholder="blur, watermark, text, extra limbs, deformed" />
-                  </div>
-                </div>
-
-                {/* BLOG */}
-                <div className="ip-gp" id="ip-gp-blog">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>Blog Options</div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Post Length</label>
-                      <select id="ip-blogLength" defaultValue="medium">
-                        <option value="short">Short (~600w)</option>
-                        <option value="medium">Medium (~1500w)</option>
-                        <option value="long">Long (~3000w)</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Writing Style</label>
-                      <select id="ip-blogStyle">
-                        <option>Educational / How-To</option>
-                        <option>Opinion / Thought Leadership</option>
-                        <option>Listicle</option>
-                        <option>Narrative / Story</option>
-                        <option>Interview / Q&amp;A</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">SEO Keywords</label>
-                    <div className="ip-tags-wrap" id="ip-kwTagsWrap">
-                      <input type="text" id="ip-kwInput" placeholder="Type keyword + Enter" />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include meta description</span>
-                      <div className="ip-toggle on" id="ip-tog-meta" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include sample intro paragraph</span>
-                      <div className="ip-toggle on" id="ip-tog-intro" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include internal link suggestions</span>
-                      <div className="ip-toggle" id="ip-tog-links" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* MARKETING */}
-                <div className="ip-gp" id="ip-gp-marketing">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>Marketing Options</div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Channel</label>
-                      <select id="ip-mktChannel">
-                        <option value="social">Social Media</option>
-                        <option value="email">Email Campaign</option>
-                        <option value="paid-ad">Paid Ads</option>
-                        <option value="landing-page">Landing Page</option>
-                        <option value="product-launch">Product Launch</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Tone</label>
-                      <select id="ip-mktTone">
-                        <option>Friendly &amp; Approachable</option>
-                        <option>Professional &amp; Authoritative</option>
-                        <option>Urgent &amp; Bold</option>
-                        <option>Playful &amp; Witty</option>
-                        <option>Empathetic &amp; Helpful</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Target Audience</label>
-                      <input type="text" id="ip-mktAudience" placeholder="e.g. busy parents, indie devs" />
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Main CTA</label>
-                      <input type="text" id="ip-mktCta" placeholder="e.g. Sign up free, Learn more" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* AGENT */}
-                <div className="ip-gp" id="ip-gp-agent">
-                  <div className="ip-section-label" style={{ marginTop: 8 }}>AI Agent Options</div>
-                  <div className="ip-row2">
-                    <div className="ip-field">
-                      <label className="ip-field-label">Agent Role</label>
-                      <select id="ip-agentRole">
-                        <option>Research Assistant</option>
-                        <option>Data Analyst</option>
-                        <option>Customer Support</option>
-                        <option>Code Reviewer</option>
-                        <option>Content Strategist</option>
-                        <option>Sales Assistant</option>
-                        <option>Custom Role</option>
-                      </select>
-                    </div>
-                    <div className="ip-field">
-                      <label className="ip-field-label">Memory / Context</label>
-                      <select id="ip-agentMemory">
-                        <option value="none">No memory</option>
-                        <option value="session">Session-based</option>
-                        <option value="persistent">Persistent</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="ip-field">
-                    <label className="ip-field-label">Available Tools (comma-separated)</label>
-                    <input type="text" id="ip-agentTools" placeholder="web_search, code_interpreter, file_reader" />
-                  </div>
-                  <div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include system prompt template</span>
-                      <div className="ip-toggle on" id="ip-tog-sysprompt" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include guardrails / safety rules</span>
-                      <div className="ip-toggle on" id="ip-tog-guardrails" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                    <div className="ip-toggle-row">
-                      <span className="ip-toggle-label">Include example conversations</span>
-                      <div className="ip-toggle" id="ip-tog-examples-agent" onClick={(e) => toggleEl(e.currentTarget as HTMLElement)}></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* ACTIONS */}
-              <div className="ip-actions">
-                <button className="ip-btn-primary" id="ip-generateBtn">
-                  <div className="ip-spinner" id="ip-spinner" style={{ display: 'none' }}></div>
-                  <span id="ip-btnLabel">✦ Generate Prompt</span>
-                </button>
-                <button className="ip-btn-ghost" id="ip-regenBtn" title="Regenerate with variation">↺</button>
-                <button className="ip-btn-ghost" id="ip-clearBtn" title="Clear output">✕</button>
-              </div>
-            </div>
+          <div className="ip-field">
+            <label className="ip-fl">API Key</label>
+            <input type="password" value={keyInput} onChange={e => setKeyInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && saveKey()} placeholder="Paste your key here…" autoComplete="off" />
+            <div className="ip-modal-hint">{modalEngine === 'groq' ? 'Free key at console.groq.com' : 'Free key at aistudio.google.com'}</div>
           </div>
-
-          {/* RIGHT PANEL: OUTPUT */}
-          <div className="ip-output-panel">
-            <div>
-              <div className="ip-output-header-row">
-                <div className="ip-output-title">
-                  Generated Prompt
-                  <span className="ip-output-badge badge-chat" id="ip-outputBadge">Chat</span>
-                </div>
-                <div className="ip-output-actions-row">
-                  <button className="ip-icon-btn" id="ip-copyBtn">⎘ Copy</button>
-                  <button className="ip-icon-btn" id="ip-downloadBtn">↓ Download</button>
-                </div>
-              </div>
-            </div>
-
-            <div className="ip-output-box" id="ip-outputBox">
-              <div className="ip-output-empty" id="ip-outputEmpty">
-                <div className="ip-big-icon">✦</div>
-                <p>Enter your idea on the left and click <strong>Generate Prompt</strong> to create a tailored, AI-powered prompt.</p>
-              </div>
-              <pre className="ip-output-pre" id="ip-outputPre" tabIndex={0} style={{ display: 'none' }}></pre>
-            </div>
-
-            <div className="ip-meta-bar" id="ip-metaBar" style={{ display: 'none' }}>
-              <span id="ip-metaGoal"></span>
-              <span style={{ color: 'var(--border)', margin: '0 2px' }}>·</span>
-              <span id="ip-metaModel"></span>
-              <span style={{ color: 'var(--border)', margin: '0 2px' }}>·</span>
-              <span id="ip-metaWords"></span>
-              <span style={{ color: 'var(--border)', margin: '0 2px' }}>·</span>
-              <span id="ip-metaTime"></span>
-            </div>
-
-            {/* HISTORY */}
-            <div className="ip-history-panel" id="ip-historyPanel">
-              <div className="ip-history-header" id="ip-historyHeader">
-                <div className="ip-history-header-title">
-                  Prompt History
-                  <span className="ip-history-count" id="ip-historyCount">0</span>
-                </div>
-                <span className="ip-history-chevron">▾</span>
-              </div>
-              <div className="ip-history-list" id="ip-historyList"></div>
-            </div>
+          <div className="ip-modal-actions">
+            <button className="ip-btn-primary" style={{ fontSize: 13 }} onClick={saveKey}>Save & Continue</button>
+            <button className="ip-btn-ghost2" onClick={() => setShowKeyModal(false)}>Cancel</button>
           </div>
         </div>
       </div>
 
-      <div className="ip-dev-tag">⚠︎ <strong>K!MO</strong> ⚠︎ — Enhanced by Claude</div>
-      <div className="ip-toast" id="ip-toast"></div>
+      {/* HISTORY SIDEBAR */}
+      <div className={`ip-overlay${sidebarOpen ? ' open' : ''}`} onClick={() => setSidebarOpen(false)} />
+      <div className={`ip-sidebar${sidebarOpen ? ' open' : ''}`}>
+        <div className="ip-sidebar-header">
+          <div className="ip-sidebar-title">💬 Chat History</div>
+          <div className="ip-sidebar-close" onClick={() => setSidebarOpen(false)}>✕</div>
+        </div>
+        <button className="ip-sidebar-new" onClick={startNewChat}>＋ New Chat</button>
+        <div className="ip-sidebar-list">
+          {historyChats.length === 0 && (
+            <div className="ip-sidebar-empty">No saved chats yet.<br />Start a conversation and it will appear here.</div>
+          )}
+          {today.length > 0 && <div className="ip-sidebar-group-label">Today</div>}
+          {today.map(c => (
+            <div key={c.id} className={`ip-sidebar-item${c.id === currentChatId ? ' active' : ''}`} onClick={() => loadChat(c)}>
+              <div className="ip-sidebar-item-text">
+                <div className="ip-sidebar-item-title">{c.title}</div>
+                <div className="ip-sidebar-item-date">{relativeDate(c.updatedAt)}</div>
+              </div>
+              <div className="ip-sidebar-item-del" onClick={e => removeChatFromHistory(e, c.id)}>✕</div>
+            </div>
+          ))}
+          {week.length > 0 && <div className="ip-sidebar-group-label">This week</div>}
+          {week.map(c => (
+            <div key={c.id} className={`ip-sidebar-item${c.id === currentChatId ? ' active' : ''}`} onClick={() => loadChat(c)}>
+              <div className="ip-sidebar-item-text">
+                <div className="ip-sidebar-item-title">{c.title}</div>
+                <div className="ip-sidebar-item-date">{relativeDate(c.updatedAt)}</div>
+              </div>
+              <div className="ip-sidebar-item-del" onClick={e => removeChatFromHistory(e, c.id)}>✕</div>
+            </div>
+          ))}
+          {older.length > 0 && <div className="ip-sidebar-group-label">Older</div>}
+          {older.map(c => (
+            <div key={c.id} className={`ip-sidebar-item${c.id === currentChatId ? ' active' : ''}`} onClick={() => loadChat(c)}>
+              <div className="ip-sidebar-item-text">
+                <div className="ip-sidebar-item-title">{c.title}</div>
+                <div className="ip-sidebar-item-date">{relativeDate(c.updatedAt)}</div>
+              </div>
+              <div className="ip-sidebar-item-del" onClick={e => removeChatFromHistory(e, c.id)}>✕</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* PROMPTS PANEL */}
+      <div className={`ip-overlay${ppOpen ? ' open' : ''}`} onClick={() => setPpOpen(false)} />
+      <div className={`ip-pp${ppOpen ? ' open' : ''}`}>
+        <div className="ip-pp-header">
+          <div className="ip-pp-title">✦ Prompt Builder</div>
+          <div className="ip-pp-close" onClick={() => setPpOpen(false)}>✕</div>
+        </div>
+        <div className="ip-pp-body">
+          <div className="ip-sl">Goal</div>
+          <div className="ip-goal-grid">
+            {([['chat','💬','Chat / QA'],['code','💻','Code'],['image','🎨','Image AI'],['blog','✍️','Blog'],['marketing','📣','Marketing'],['agent','🤖','Agent']] as [string,string,string][]).map(([g, icon, label]) => (
+              <button key={g} className={`ip-goal-btn${ppGoal === g ? ' active' : ''}`} onClick={() => setPpGoal(g)}>
+                <span className="ig">{icon}</span>{label}
+              </button>
+            ))}
+          </div>
+          <div className="ip-field">
+            <label className="ip-fl">Your Idea</label>
+            <textarea id="pp-idea" placeholder="Describe what you need…" style={{ minHeight: 70 }} />
+          </div>
+          {ppGoal === 'chat' && <>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Audience</label><select id="pp-chat-aud"><option>General public</option><option>Developers</option><option>Students</option><option>Executives</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Expertise</label><select id="pp-chat-exp"><option>Beginner</option><option>Intermediate</option><option>Expert</option></select></div>
+            </div>
+            <div className="ip-field"><label className="ip-fl">Tone</label><select id="pp-chat-tone"><option>Informative &amp; Neutral</option><option>Friendly &amp; Conversational</option><option>Direct &amp; Concise</option><option>Socratic</option></select></div>
+            <div className="ip-tr"><span className="ip-tr-label">Include examples</span><div className="ip-tog on" id="pp-tog1" onClick={e => e.currentTarget.classList.toggle('on')} /></div>
+          </>}
+          {ppGoal === 'code' && <>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Language</label><select id="pp-code-lang"><option>Python</option><option>TypeScript</option><option>JavaScript</option><option>React</option><option>Go</option><option>Rust</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Scale</label><select id="pp-code-scale"><option>Snippet</option><option>Module</option><option>Full Service</option><option>Full Stack</option></select></div>
+            </div>
+            <div className="ip-field"><label className="ip-fl">Requirements</label><input type="text" id="pp-code-reqs" placeholder="e.g. no ORM, async/await…" /></div>
+            <div className="ip-tr"><span className="ip-tr-label">Include tests</span><div className="ip-tog on" id="pp-tog2" onClick={e => e.currentTarget.classList.toggle('on')} /></div>
+          </>}
+          {ppGoal === 'image' && <>
+            <div className="ip-field"><label className="ip-fl">Style Presets</label>
+              <div className="ip-pills" id="pp-style-pills">
+                {([['cinematic lighting','Cinematic'],['concept art','Concept Art'],['photorealistic, 8k','Photorealistic'],['anime style','Anime'],['watercolor','Watercolor'],['cyberpunk, neon','Cyberpunk']] as [string,string][]).map(([v, label]) => (
+                  <span key={v} className="ip-pill on" data-v={v} onClick={e => e.currentTarget.classList.toggle('on')}>{label}</span>
+                ))}
+              </div>
+            </div>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Aspect</label><select id="pp-aspect"><option>1:1</option><option>16:9</option><option>2:3</option><option>4:5</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Variations</label><input type="number" id="pp-seeds" defaultValue={3} min={1} max={5} /></div>
+            </div>
+          </>}
+          {ppGoal === 'blog' && <>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Length</label><select id="pp-blog-len"><option>Short (~600w)</option><option>Medium (~1500w)</option><option>Long (~3000w)</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Style</label><select id="pp-blog-style"><option>How-To</option><option>Opinion</option><option>Listicle</option><option>Narrative</option></select></div>
+            </div>
+            <div className="ip-field"><label className="ip-fl">SEO Keywords</label>
+              <div className="ip-tags-wrap" onClick={() => document.getElementById('pp-kw-input')?.focus()}>
+                {ppKeywords.map(k => <span key={k} className="ip-tag">{k}<span className="ip-tag-x" onClick={() => setPpKeywords(p => p.filter(x => x !== k))}>×</span></span>)}
+                <input id="pp-kw-input" placeholder="Type + Enter" onKeyDown={e => {
+                  const t = e.target as HTMLInputElement;
+                  if ((e.key === 'Enter' || e.key === ',') && t.value.trim()) { e.preventDefault(); setPpKeywords(p => p.includes(t.value.trim()) ? p : [...p, t.value.trim()]); t.value = ''; }
+                }} />
+              </div>
+            </div>
+          </>}
+          {ppGoal === 'marketing' && <>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Channel</label><select id="pp-mkt-ch"><option>Social Media</option><option>Email</option><option>Paid Ads</option><option>Landing Page</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Tone</label><select id="pp-mkt-tone"><option>Friendly</option><option>Professional</option><option>Urgent &amp; Bold</option><option>Playful</option></select></div>
+            </div>
+            <div className="ip-field"><label className="ip-fl">Audience</label><input type="text" id="pp-mkt-aud" placeholder="e.g. indie devs" /></div>
+          </>}
+          {ppGoal === 'agent' && <>
+            <div className="ip-row2">
+              <div className="ip-field"><label className="ip-fl">Role</label><select id="pp-agent-role"><option>Research Assistant</option><option>Data Analyst</option><option>Customer Support</option><option>Code Reviewer</option></select></div>
+              <div className="ip-field"><label className="ip-fl">Memory</label><select><option>None</option><option>Session</option><option>Persistent</option></select></div>
+            </div>
+            <div className="ip-field"><label className="ip-fl">Tools</label><input type="text" id="pp-agent-tools" placeholder="web_search, code_interpreter…" /></div>
+            <div className="ip-tr"><span className="ip-tr-label">Include guardrails</span><div className="ip-tog on" id="pp-tog3" onClick={e => e.currentTarget.classList.toggle('on')} /></div>
+          </>}
+        </div>
+        <div className="ip-pp-footer">
+          <button className="ip-btn-primary" disabled={ppGenerating} onClick={generatePrompt}>
+            {ppGenerating && <div className="ip-pp-spinner" />}
+            <span>{ppGenerating ? 'Generating…' : '✦ Generate & Use Prompt'}</span>
+          </button>
+          <button className="ip-btn-ghost2" onClick={() => setPpOpen(false)}>Cancel</button>
+        </div>
+      </div>
+
+      {/* MAIN LAYOUT */}
+      <div className="ip-chat-layout">
+        <header className="ip-header">
+          <div className="ip-brand">
+            <div className="ip-logo">iP</div>
+            <div className="ip-brand-name">iPrompt <span>AI</span></div>
+          </div>
+          <div className="ip-header-mid">
+            <div className="ip-model-pill">
+              <select value={engine} onChange={e => {
+                const v = e.target.value; setEngine(v);
+                if (!getKey(v)) { setModalEngine(v); setKeyExpired(false); setShowKeyModal(true); }
+              }}>
+                <option value="groq">⚡ Groq — Llama 3.3 70B</option>
+                <option value="gemini">✦ Gemini 2.0 Flash</option>
+              </select>
+            </div>
+          </div>
+          <div className="ip-header-actions">
+            <button className="ip-hbtn" onClick={() => setSidebarOpen(true)}>
+              💬 History {historyChats.length > 0 && <span style={{ marginLeft: 4, background: 'rgba(99,179,237,0.2)', color: 'var(--accent)', borderRadius: 999, padding: '1px 7px', fontSize: 11 }}>{historyChats.length}</span>}
+            </button>
+            <button className="ip-hbtn accent" onClick={() => setPpOpen(true)}>✦ Prompts</button>
+            <button className="ip-hbtn" onClick={startNewChat}>＋ New</button>
+            <button className="ip-hbtn" onClick={() => { setModalEngine(engine); setKeyExpired(false); setShowKeyModal(true); }}>🔑</button>
+          </div>
+        </header>
+
+        <div className={`ip-key-banner${noKey ? ' show' : ''}`}>
+          <span>⚠ No API key — enter one to start chatting</span>
+          <button onClick={() => { setModalEngine(engine); setKeyExpired(false); setShowKeyModal(true); }}>Set Key</button>
+        </div>
+
+        <div className="ip-chat-area" ref={chatAreaRef}>
+          {messages.length === 0 && (
+            <div className="ip-welcome">
+              <div className="ip-welcome-icon">✦</div>
+              <h2>What can I help you with?</h2>
+              <p>Ask me anything — writing, coding, explaining, analysing, brainstorming, and more. Use <strong>✦ Prompts</strong> to build expert-level prompts.</p>
+              <div className="ip-chips">
+                {CHIPS.map(c => (
+                  <div key={c} className="ip-chip" onClick={() => sendMessage(c.replace(/^[^\s]+\s/, ''))}>{c}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="ip-input-wrap">
+          <div className="ip-input-row">
+            <textarea ref={inputRef} id="ip-chatInput" placeholder="Ask anything…" rows={1} onKeyDown={handleKeyDown} onInput={e => autoResize(e.currentTarget)} />
+            <button className="ip-send-btn" disabled={streaming} onClick={() => sendMessage()}>↑</button>
+          </div>
+          <div className="ip-input-hint">
+            <span>Enter to send &nbsp;·&nbsp; Shift+Enter for newline</span>
+            <button onClick={startNewChat}>Clear chat</button>
+          </div>
+        </div>
+      </div>
+
+      <div className={`ip-toast${toastVisible ? ' show' : ''}`}>{toastMsg}</div>
     </>
   );
 }
