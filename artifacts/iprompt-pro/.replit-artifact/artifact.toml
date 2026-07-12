@@ -1,0 +1,27 @@
+kind = "web"
+previewPath = "/"
+title = "iPrompt Pro"
+version = "1.0.0"
+id = "artifacts/iprompt-pro"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22037
+
+[services.development]
+run = "pnpm --filter @workspace/iprompt-pro run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/iprompt-pro", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/iprompt-pro/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22037"
+BASE_PATH = "/"

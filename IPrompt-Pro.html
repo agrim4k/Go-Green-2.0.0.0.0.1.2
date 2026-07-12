@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iPrompt Pro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --bg:#08090d;--surface:#0f1117;--surface2:#161820;
+  --border:rgba(255,255,255,0.06);--border-glow:rgba(99,179,237,0.3);
+  --accent:#63b3ed;--accent2:#9f7aea;--accent3:#f6ad55;
+  --green:#68d391;--red:#fc8181;--text:#e8eaf0;--muted:#6b7280;--muted2:#9ca3af;
+  --radius:14px;--radius-sm:8px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);font-family:'DM Sans',system-ui,sans-serif;color:var(--text);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(99,179,237,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(99,179,237,0.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+body::after{content:'';position:fixed;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:400px;background:radial-gradient(ellipse,rgba(99,179,237,0.06) 0%,transparent 70%);pointer-events:none;z-index:0}
+.app{position:relative;z-index:1;max-width:1280px;margin:0 auto;padding:24px 20px 60px;min-height:100vh}
+.header{display:flex;align-items:center;justify-content:space-between;padding:20px 0 32px;border-bottom:1px solid var(--border);margin-bottom:32px}
+.header-left{display:flex;align-items:center;gap:16px}
+.logo-mark{width:42px;height:42px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:#08090d;flex-shrink:0;box-shadow:0 0 20px rgba(99,179,237,0.3)}
+.header-title{font-family:'Syne',sans-serif;font-weight:700;font-size:22px;letter-spacing:-.5px}
+.header-sub{font-size:13px;color:var(--muted2);margin-top:2px}
+.layout{display:grid;grid-template-columns:420px 1fr;gap:20px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.goal-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
+.goal-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;transition:all 0.2s;color:var(--muted2);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500}
+.goal-btn .icon{font-size:20px}
+.goal-btn:hover{border-color:rgba(255,255,255,0.15);color:var(--text)}
+.goal-btn.active{border-color:var(--accent);background:rgba(99,179,237,0.08);color:var(--accent);box-shadow:0 0 12px rgba(99,179,237,0.1)}
+.field{margin-bottom:16px}
+.field-label{display:block;font-size:12px;font-weight:500;color:var(--muted2);letter-spacing:.05em;text-transform:uppercase;margin-bottom:7px}
+textarea,input[type="text"],input[type="number"],input[type="password"],select{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;transition:border-color 0.2s,box-shadow 0.2s;outline:none;appearance:none}
+textarea{min-height:120px;resize:vertical;line-height:1.6}
+textarea:focus,input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,179,237,0.1)}
+select option{background:#1a1c26}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+.gp{display:none}.gp.visible{display:block}
+.tags-wrap{display:flex;flex-wrap:wrap;gap:6px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;min-height:44px;cursor:text;transition:border-color 0.2s}
+.tags-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(99,179,237,0.1)}
+.tag{display:inline-flex;align-items:center;gap:4px;background:rgba(99,179,237,0.15);color:var(--accent);border-radius:4px;padding:2px 8px;font-size:13px}
+.tag-x{cursor:pointer;opacity:.6}.tag-x:hover{opacity:1}
+.tags-wrap input{flex:1;min-width:100px;background:transparent;border:none;box-shadow:none;padding:2px 4px;font-size:13px}
+.tags-wrap input:focus{box-shadow:none}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-label{font-size:13px;color:var(--muted2)}
+.toggle{width:38px;height:22px;background:var(--surface2);border:1px solid var(--border);border-radius:999px;cursor:pointer;position:relative;transition:background 0.2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;top:3px;left:3px;width:14px;height:14px;background:var(--muted);border-radius:50%;transition:transform 0.2s,background 0.2s}
+.toggle.on{background:rgba(99,179,237,0.2);border-color:var(--accent)}
+.toggle.on::after{transform:translateX(16px);background:var(--accent)}
+.preset-pills{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.preset-pill{padding:6px 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--muted2);font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s}
+.preset-pill:hover{border-color:rgba(255,255,255,0.15);color:var(--text)}
+.preset-pill.on{background:rgba(159,122,234,0.12);border-color:var(--accent2);color:var(--accent2)}
+.actions{display:flex;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.btn-primary{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;background:linear-gradient(135deg,var(--accent),#4299e1);border:none;border-radius:var(--radius-sm);color:#08090d;font-family:'Syne',sans-serif;font-weight:700;font-size:14px;cursor:pointer;transition:all 0.2s;box-shadow:0 4px 20px rgba(99,179,237,0.25)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 8px 28px rgba(99,179,237,0.4)}
+.btn-primary:active{transform:translateY(0)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.btn-ghost{display:flex;align-items:center;justify-content:center;gap:6px;padding:10px 14px;background:transparent;border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted2);font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;transition:all 0.2s}
+.btn-ghost:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+.output-panel{display:flex;flex-direction:column;gap:16px}
+.output-header-row{display:flex;align-items:center;justify-content:space-between}
+.output-title{font-family:'Syne',sans-serif;font-weight:700;font-size:16px;display:flex;align-items:center;gap:10px}
+.output-badge{font-size:11px;padding:3px 10px;border-radius:999px;font-weight:500;font-family:'DM Sans',sans-serif}
+.badge-image{background:rgba(246,173,85,0.15);color:var(--accent3);border:1px solid rgba(246,173,85,0.3)}
+.badge-chat{background:rgba(99,179,237,0.12);color:var(--accent);border:1px solid rgba(99,179,237,0.25)}
+.badge-code{background:rgba(104,211,145,0.12);color:var(--green);border:1px solid rgba(104,211,145,0.25)}
+.badge-blog{background:rgba(159,122,234,0.12);color:var(--accent2);border:1px solid rgba(159,122,234,0.25)}
+.badge-marketing{background:rgba(252,129,129,0.12);color:var(--red);border:1px solid rgba(252,129,129,0.25)}
+.badge-agent{background:rgba(104,211,145,0.12);color:var(--green);border:1px solid rgba(104,211,145,0.25)}
+.output-actions-row{display:flex;gap:8px}
+.icon-btn{display:flex;align-items:center;gap:6px;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--muted2);font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s}
+.icon-btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+.icon-btn.success{border-color:var(--green);color:var(--green);background:rgba(104,211,145,0.08)}
+.output-box{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-height:360px}
+.output-box.loading{border-color:rgba(99,179,237,0.3)}
+.output-box.loading::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);animation:shimmer 1.5s linear infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+.output-pre{padding:20px;font-family:'DM Mono',monospace;font-size:13.5px;line-height:1.75;color:var(--text);white-space:pre-wrap;word-break:break-word;min-height:360px;max-height:640px;overflow-y:auto;outline:none}
+.output-pre::-webkit-scrollbar{width:6px}
+.output-pre::-webkit-scrollbar-track{background:transparent}
+.output-pre::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
+.output-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;height:360px;color:var(--muted);text-align:center;padding:40px}
+.output-empty .big-icon{font-size:40px;opacity:.4}
+.output-empty p{font-size:14px;max-width:280px;line-height:1.6}
+.meta-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border);font-size:12px;color:var(--muted2)}
+.history-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.history-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+.history-header-title{font-size:13px;font-weight:600;color:var(--muted2);display:flex;align-items:center;gap:8px}
+.history-count{background:rgba(99,179,237,0.15);color:var(--accent);border-radius:999px;padding:1px 8px;font-size:11px}
+.history-chevron{transition:transform 0.2s;color:var(--muted)}
+.history-panel.open .history-chevron{transform:rotate(180deg)}
+.history-list{max-height:0;overflow:hidden;transition:max-height 0.3s ease}
+.history-panel.open .history-list{max-height:300px;overflow-y:auto}
+.history-item{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s}
+.history-item:last-child{border-bottom:none}
+.history-item:hover{background:rgba(255,255,255,0.02)}
+.history-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.history-item-text{flex:1;font-size:13px;color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.history-item-time{font-size:11px;color:var(--muted);flex-shrink:0}
+.spinner{width:16px;height:16px;border:2px solid rgba(8,9,13,0.3);border-top-color:#08090d;border-radius:50%;animation:spin 0.7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface2);border:1px solid var(--border);border-radius:999px;padding:10px 20px;font-size:13px;color:var(--text);box-shadow:0 8px 32px rgba(0,0,0,0.5);z-index:9999;opacity:0;transition:all 0.25s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.section-label{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.section-label::after{content:'';flex:1;height:1px;background:var(--border)}
+.char-counter{font-size:11px;color:var(--muted);text-align:right;margin-top:4px}
+.dev-tag{position:fixed;bottom:20px;right:20px;background:rgba(255,255,255,0.03);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.07);border-radius:999px;padding:8px 16px;font-family:'DM Mono',monospace;font-size:11px;color:rgba(255,255,255,0.3);cursor:pointer;user-select:none;transition:all 0.2s;z-index:100}
+.dev-tag:hover{background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.7)}
+/* API key modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;width:440px;max-width:90vw}
+.modal-title{font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px}
+.modal-sub{font-size:13px;color:var(--muted2);margin-bottom:20px;line-height:1.6}
+.modal-actions{display:flex;gap:10px;margin-top:20px}
+@media(max-width:900px){.layout{grid-template-columns:1fr}.app{padding:16px 14px 80px}}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.07);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- API KEY MODAL -->
+<div class="modal-overlay" id="keyModal">
+  <div class="modal">
+    <div class="modal-title">Enter your API Key</div>
+    <div class="modal-sub">Your key is saved only in your browser (localStorage) and never sent anywhere except the selected AI provider.</div>
+    <div class="field">
+      <label class="field-label">AI Engine</label>
+      <select id="modalEngine">
+        <option value="groq">⚡ Groq — Llama 3.3 (Fast &amp; Free tier)</option>
+        <option value="gemini">✦ Gemini 2.0 Flash (Google AI Studio)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label class="field-label">API Key</label>
+      <input type="password" id="modalKey" placeholder="Paste your API key here…" />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="saveKey()" style="font-size:13px">Save &amp; Continue</button>
+      <button class="btn-ghost" onclick="document.getElementById('keyModal').style.display='none'">Skip</button>
+    </div>
+  </div>
+</div>
+
+<div class="app">
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo-mark">iP</div>
+      <div>
+        <div class="header-title">iPrompt <span style="color:var(--accent)">Pro</span></div>
+        <div class="header-sub">AI-powered prompt engineering for every use case</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <select id="engineSelect" class="btn-ghost" style="cursor:pointer;padding-right:28px" onchange="onEngineChange()">
+        <option value="groq">⚡ Groq — Llama 3.3</option>
+        <option value="gemini">✦ Gemini 2.0 Flash</option>
+      </select>
+      <button class="btn-ghost" onclick="showKeyModal()">🔑 API Key</button>
+      <button class="btn-ghost" id="exportBtn">↓ Export History</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- LEFT PANEL -->
+    <div>
+      <div class="panel">
+        <div class="section-label">Prompt Goal</div>
+        <div class="goal-grid" id="goalGrid">
+          <button class="goal-btn active" data-goal="chat"><span class="icon">💬</span>Chat / QA</button>
+          <button class="goal-btn" data-goal="code"><span class="icon">💻</span>Code</button>
+          <button class="goal-btn" data-goal="image"><span class="icon">🎨</span>Image AI</button>
+          <button class="goal-btn" data-goal="blog"><span class="icon">✍️</span>Blog / SEO</button>
+          <button class="goal-btn" data-goal="marketing"><span class="icon">📣</span>Marketing</button>
+          <button class="goal-btn" data-goal="agent"><span class="icon">🤖</span>AI Agent</button>
+        </div>
+
+        <div class="field">
+          <label class="field-label">Your Idea</label>
+          <textarea id="ideaInput" placeholder="Describe what you need… e.g. 'A meditation app for busy professionals'"></textarea>
+          <div class="char-counter"><span id="charCount">0</span> / 100000</div>
+        </div>
+
+        <div class="row2">
+          <div class="field">
+            <label class="field-label">Model Target</label>
+            <select id="modelSelect">
+              <option value="claude">Claude</option>
+              <option value="chatgpt">ChatGPT / GPT-4</option>
+              <option value="gemini">Gemini</option>
+              <option value="midjourney">Midjourney</option>
+              <option value="stable-diffusion">Stable Diffusion</option>
+              <option value="dall-e">DALL·E 3</option>
+              <option value="generic">Generic / Any</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label">Output Detail</label>
+            <select id="verbosity">
+              <option value="concise">Concise</option>
+              <option value="detailed" selected>Detailed</option>
+              <option value="exhaustive">Exhaustive</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- GOAL PANELS -->
+        <div id="goalPanels">
+
+          <!-- CHAT -->
+          <div class="gp visible" id="gp-chat">
+            <div class="section-label" style="margin-top:8px">Chat Options</div>
+            <div class="row2">
+              <div class="field">
+                <label class="field-label">Audience</label>
+                <select id="chatAudience">
+                  <option>General public</option><option>Developers</option>
+                  <option>Product Managers</option><option>Students</option>
+                  <option>Executives</option><option>Beginners</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Expertise Level</label>
+                <select id="chatExpertise">
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate" selected>Intermediate</option>
+                  <option value="expert">Expert</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Style / Tone</label>
+              <select id="chatTone">
+                <option>Informative &amp; Neutral</option>
+                <option>Friendly &amp; Conversational</option>
+                <option>Socratic (asks questions)</option>
+                <option>Direct &amp; Concise</option>
+                <option>Structured &amp; Formal</option>
+              </select>
+            </div>
+            <div>
+              <div class="toggle-row"><span class="toggle-label">Include examples &amp; analogies</span><div class="toggle on" id="tog-examples" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Add JSON metadata block</span><div class="toggle on" id="tog-json" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include follow-up questions</span><div class="toggle" id="tog-followup" onclick="this.classList.toggle('on')"></div></div>
+            </div>
+          </div>
+
+          <!-- CODE -->
+          <div class="gp" id="gp-code">
+            <div class="section-label" style="margin-top:8px">Code Options</div>
+            <div class="row2">
+              <div class="field">
+                <label class="field-label">Language / Stack</label>
+                <select id="codeLang">
+                  <option value="python">Python</option><option value="typescript">TypeScript</option>
+                  <option value="javascript">JavaScript</option><option value="react">React</option>
+                  <option value="node">Node.js</option><option value="go">Go</option>
+                  <option value="rust">Rust</option><option value="swift">Swift</option>
+                </select>
+              </div>
+              <div class="field">
+                <label class="field-label">Project Scale</label>
+                <select id="codeScale">
+                  <option value="snippet">Snippet</option><option value="module">Module / Class</option>
+                  <option value="service" selected>Full Service</option><option value="fullstack">Full Stack App</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Requirements / Constraints</label>
+              <input type="text" id="codeReqs" placeholder="e.g. must use SQLite, no ORM, async/await…" />
+            </div>
+            <div>
+              <div class="toggle-row"><span class="toggle-label">Include tests</span><div class="toggle on" id="tog-tests" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include deployment steps</span><div class="toggle" id="tog-deploy" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include Docker setup</span><div class="toggle" id="tog-docker" onclick="this.classList.toggle('on')"></div></div>
+            </div>
+          </div>
+
+          <!-- IMAGE -->
+          <div class="gp" id="gp-image">
+            <div class="section-label" style="margin-top:8px">Image Options</div>
+            <div class="field">
+              <label class="field-label">Style Presets (multi-select)</label>
+              <div class="preset-pills" id="stylePills">
+                <span class="preset-pill on" data-v="cinematic lighting, dramatic atmosphere">Cinematic</span>
+                <span class="preset-pill" data-v="concept art, digital painting">Concept Art</span>
+                <span class="preset-pill" data-v="photorealistic, 8k, DSLR, bokeh">Photorealistic</span>
+                <span class="preset-pill" data-v="anime style, cel shading">Anime</span>
+                <span class="preset-pill" data-v="watercolor, soft brush strokes">Watercolor</span>
+                <span class="preset-pill" data-v="fantasy art, epic, magical">Fantasy</span>
+                <span class="preset-pill" data-v="minimalist, clean, geometric">Minimalist</span>
+                <span class="preset-pill" data-v="cyberpunk, neon, futuristic">Cyberpunk</span>
+              </div>
+            </div>
+            <div class="row3">
+              <div class="field"><label class="field-label">Aspect Ratio</label>
+                <select id="imgAspect"><option value="1:1">1:1</option><option value="16:9">16:9</option><option value="2:3" selected>2:3</option><option value="3:4">3:4</option><option value="4:5">4:5</option></select>
+              </div>
+              <div class="field"><label class="field-label">Quality</label>
+                <select id="imgQuality"><option value="standard">Standard</option><option value="high" selected>High</option><option value="ultra">Ultra</option></select>
+              </div>
+              <div class="field"><label class="field-label">Variations</label>
+                <input type="number" id="imgSeeds" min="1" max="5" value="3" />
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">Negative Prompts</label>
+              <input type="text" id="imgNeg" placeholder="blur, watermark, text, deformed" />
+            </div>
+          </div>
+
+          <!-- BLOG -->
+          <div class="gp" id="gp-blog">
+            <div class="section-label" style="margin-top:8px">Blog Options</div>
+            <div class="row2">
+              <div class="field"><label class="field-label">Post Length</label>
+                <select id="blogLength"><option value="short">Short (~600w)</option><option value="medium" selected>Medium (~1500w)</option><option value="long">Long (~3000w)</option></select>
+              </div>
+              <div class="field"><label class="field-label">Writing Style</label>
+                <select id="blogStyle"><option>Educational / How-To</option><option>Opinion / Thought Leadership</option><option>Listicle</option><option>Narrative / Story</option><option>Interview / Q&amp;A</option></select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="field-label">SEO Keywords</label>
+              <div class="tags-wrap" id="kwTagsWrap"><input type="text" id="kwInput" placeholder="Type keyword + Enter" /></div>
+            </div>
+            <div>
+              <div class="toggle-row"><span class="toggle-label">Include meta description</span><div class="toggle on" id="tog-meta" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include sample intro paragraph</span><div class="toggle on" id="tog-intro" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include internal link suggestions</span><div class="toggle" id="tog-links" onclick="this.classList.toggle('on')"></div></div>
+            </div>
+          </div>
+
+          <!-- MARKETING -->
+          <div class="gp" id="gp-marketing">
+            <div class="section-label" style="margin-top:8px">Marketing Options</div>
+            <div class="row2">
+              <div class="field"><label class="field-label">Channel</label>
+                <select id="mktChannel"><option value="social">Social Media</option><option value="email">Email Campaign</option><option value="paid-ad">Paid Ads</option><option value="landing-page">Landing Page</option><option value="product-launch">Product Launch</option></select>
+              </div>
+              <div class="field"><label class="field-label">Tone</label>
+                <select id="mktTone"><option>Friendly &amp; Approachable</option><option>Professional &amp; Authoritative</option><option>Urgent &amp; Bold</option><option>Playful &amp; Witty</option><option>Empathetic &amp; Helpful</option></select>
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field"><label class="field-label">Target Audience</label><input type="text" id="mktAudience" placeholder="e.g. busy parents, indie devs" /></div>
+              <div class="field"><label class="field-label">Main CTA</label><input type="text" id="mktCta" placeholder="e.g. Sign up free" /></div>
+            </div>
+          </div>
+
+          <!-- AGENT -->
+          <div class="gp" id="gp-agent">
+            <div class="section-label" style="margin-top:8px">AI Agent Options</div>
+            <div class="row2">
+              <div class="field"><label class="field-label">Agent Role</label>
+                <select id="agentRole"><option>Research Assistant</option><option>Data Analyst</option><option>Customer Support</option><option>Code Reviewer</option><option>Content Strategist</option><option>Sales Assistant</option><option>Custom Role</option></select>
+              </div>
+              <div class="field"><label class="field-label">Memory / Context</label>
+                <select id="agentMemory"><option value="none">No memory</option><option value="session">Session-based</option><option value="persistent">Persistent</option></select>
+              </div>
+            </div>
+            <div class="field"><label class="field-label">Available Tools</label><input type="text" id="agentTools" placeholder="web_search, code_interpreter, file_reader" /></div>
+            <div>
+              <div class="toggle-row"><span class="toggle-label">Include system prompt template</span><div class="toggle on" id="tog-sysprompt" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include guardrails / safety rules</span><div class="toggle on" id="tog-guardrails" onclick="this.classList.toggle('on')"></div></div>
+              <div class="toggle-row"><span class="toggle-label">Include example conversations</span><div class="toggle" id="tog-examples-agent" onclick="this.classList.toggle('on')"></div></div>
+            </div>
+          </div>
+        </div><!-- /goalPanels -->
+
+        <div class="actions">
+          <button class="btn-primary" id="generateBtn" onclick="generate(false)">
+            <div class="spinner" id="spinner" style="display:none"></div>
+            <span id="btnLabel">✦ Generate Prompt</span>
+          </button>
+          <button class="btn-ghost" onclick="generate(true)" title="Regenerate variation">↺</button>
+          <button class="btn-ghost" onclick="clearOutput()" title="Clear">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="output-panel">
+      <div>
+        <div class="output-header-row">
+          <div class="output-title">Generated Prompt <span class="output-badge badge-chat" id="outputBadge">Chat</span></div>
+          <div class="output-actions-row">
+            <button class="icon-btn" id="copyBtn" onclick="copyResult()">⎘ Copy</button>
+            <button class="icon-btn" onclick="downloadResult()">↓ Download</button>
+          </div>
+        </div>
+      </div>
+      <div class="output-box" id="outputBox">
+        <div class="output-empty" id="outputEmpty">
+          <div class="big-icon">✦</div>
+          <p>Enter your idea on the left and click <strong>Generate Prompt</strong> to create a tailored, AI-powered prompt.</p>
+        </div>
+        <pre class="output-pre" id="outputPre" tabindex="0" style="display:none"></pre>
+      </div>
+      <div class="meta-bar" id="metaBar" style="display:none">
+        <span id="metaGoal"></span>
+        <span style="color:var(--border);margin:0 2px">·</span>
+        <span id="metaEngine"></span>
+        <span style="color:var(--border);margin:0 2px">·</span>
+        <span id="metaWords"></span>
+        <span style="color:var(--border);margin:0 2px">·</span>
+        <span id="metaTime"></span>
+      </div>
+      <div class="history-panel" id="historyPanel">
+        <div class="history-header" onclick="document.getElementById('historyPanel').classList.toggle('open')">
+          <div class="history-header-title">Prompt History <span class="history-count" id="historyCount">0</span></div>
+          <span class="history-chevron">▾</span>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="dev-tag">⚠︎ <strong>K!MO</strong> ⚠︎ — Powered by AI</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'iprompt_pro_v2';
+const KEY_STORE   = 'iprompt_apikeys';
+
+let currentGoal  = 'chat';
+let isGenerating = false;
+let lastResult   = '';
+let keywords     = [];
+let toastTimer   = null;
+
+/* ───── KEY MANAGEMENT ───── */
+function getKeys() { try { return JSON.parse(localStorage.getItem(KEY_STORE)||'{}'); } catch { return {}; } }
+function saveKey() {
+  const engine = document.getElementById('modalEngine').value;
+  const key    = document.getElementById('modalKey').value.trim();
+  if (!key) { toast('⚠ Please enter a key'); return; }
+  const keys = getKeys(); keys[engine] = key;
+  localStorage.setItem(KEY_STORE, JSON.stringify(keys));
+  document.getElementById('engineSelect').value = engine;
+  document.getElementById('keyModal').style.display = 'none';
+  document.getElementById('modalKey').value = '';
+  toast('✓ Key saved!');
+}
+function showKeyModal() {
+  const engine = document.getElementById('engineSelect').value;
+  document.getElementById('modalEngine').value = engine;
+  document.getElementById('keyModal').style.display = 'flex';
+}
+function onEngineChange() {
+  const engine = document.getElementById('engineSelect').value;
+  const keys   = getKeys();
+  if (!keys[engine]) showKeyModal();
+}
+
+/* ───── INIT ───── */
+window.addEventListener('DOMContentLoaded', () => {
+  const keys = getKeys();
+  if (!keys.groq && !keys.gemini) { document.getElementById('keyModal').style.display = 'flex'; }
+  else { document.getElementById('keyModal').style.display = 'none'; }
+
+  document.getElementById('goalGrid').addEventListener('click', e => {
+    const btn = e.target.closest('.goal-btn'); if (!btn) return;
+    document.querySelectorAll('.goal-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentGoal = btn.dataset.goal;
+    document.querySelectorAll('.gp').forEach(p => p.classList.remove('visible'));
+    document.getElementById('gp-' + currentGoal)?.classList.add('visible');
+    updateBadge();
+  });
+
+  document.getElementById('ideaInput').addEventListener('input', function(){
+    document.getElementById('charCount').textContent = this.value.length;
+  });
+  document.getElementById('ideaInput').addEventListener('keydown', e => {
+    if ((e.ctrlKey||e.metaKey) && e.key==='Enter') generate(false);
+  });
+
+  document.getElementById('kwInput').addEventListener('keydown', e => {
+    if ((e.key==='Enter'||e.key===',') && e.target.value.trim()) {
+      e.preventDefault(); addKeyword(e.target.value.trim().replace(',','')); e.target.value='';
+    }
+  });
+
+  document.getElementById('stylePills').addEventListener('click', e => {
+    const p = e.target.closest('.preset-pill'); if (p) p.classList.toggle('on');
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', exportHistory);
+
+  renderHistory();
+  updateBadge();
+});
+
+/* ───── HELPERS ───── */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function toast(msg, dur=2200){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  if(toastTimer) clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'), dur);
+}
+function updateBadge(){
+  const badge=document.getElementById('outputBadge');
+  const labels={chat:'Chat',code:'Code',image:'Image',blog:'Blog',marketing:'Marketing',agent:'Agent'};
+  const cls={chat:'badge-chat',code:'badge-code',image:'badge-image',blog:'badge-blog',marketing:'badge-marketing',agent:'badge-agent'};
+  badge.textContent=labels[currentGoal]??currentGoal;
+  badge.className='output-badge '+(cls[currentGoal]??'badge-chat');
+}
+function addKeyword(kw){
+  if(keywords.includes(kw)) return; keywords.push(kw); renderKeywords();
+}
+function removeKeyword(kw){ keywords=keywords.filter(k=>k!==kw); renderKeywords(); }
+function renderKeywords(){
+  const wrap=document.getElementById('kwTagsWrap');
+  const inp=document.getElementById('kwInput');
+  wrap.innerHTML='';
+  keywords.forEach(k=>{
+    const s=document.createElement('span'); s.className='tag';
+    s.innerHTML=`${esc(k)} <span class="tag-x" onclick="removeKeyword('${esc(k)}')">×</span>`;
+    wrap.appendChild(s);
+  });
+  wrap.appendChild(inp);
+}
+function getHistory(){ try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');}catch{return [];} }
+function saveHistory(entry){
+  const arr=getHistory(); arr.unshift(entry);
+  if(arr.length>100) arr.length=100;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); renderHistory();
+}
+function renderHistory(){
+  const arr=getHistory();
+  document.getElementById('historyCount').textContent=arr.length;
+  const list=document.getElementById('historyList'); list.innerHTML='';
+  if(!arr.length){ list.innerHTML='<div style="padding:16px;text-align:center;color:var(--muted);font-size:13px">No history yet</div>'; return; }
+  const colors={chat:'#63b3ed',code:'#68d391',image:'#f6ad55',blog:'#9f7aea',marketing:'#fc8181',agent:'#68d391'};
+  arr.slice(0,20).forEach(entry=>{
+    const d=document.createElement('div'); d.className='history-item';
+    const t=new Date(entry.t).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    d.innerHTML=`<div class="history-dot" style="background:${colors[entry.goal]??'#63b3ed'}"></div><div class="history-item-text">${esc(entry.idea?.slice(0,60)??'Prompt')}</div><div class="history-item-time">${t}</div>`;
+    d.addEventListener('click',()=>{ showOutput(entry.result,entry.goal); toast('Loaded from history'); });
+    list.appendChild(d);
+  });
+}
+function showOutput(text, goal){
+  lastResult=text;
+  document.getElementById('outputEmpty').style.display='none';
+  const pre=document.getElementById('outputPre'); pre.style.display='block'; pre.textContent=text;
+  const words=text.split(/\s+/).filter(Boolean).length;
+  document.getElementById('metaBar').style.display='flex';
+  document.getElementById('metaGoal').textContent='🎯 '+(goal||currentGoal);
+  document.getElementById('metaEngine').textContent='🤖 '+(document.getElementById('engineSelect').value==='gemini'?'Gemini 2.0 Flash':'Groq Llama 3.3');
+  document.getElementById('metaWords').textContent=`📝 ${words} words`;
+  document.getElementById('metaTime').textContent='⏱ '+new Date().toLocaleTimeString();
+  updateBadge();
+}
+function clearOutput(){
+  lastResult='';
+  document.getElementById('outputPre').style.display='none';
+  document.getElementById('outputEmpty').style.display='flex';
+  document.getElementById('metaBar').style.display='none';
+}
+async function copyResult(){
+  if(!lastResult){toast('Nothing to copy');return;}
+  try{
+    await navigator.clipboard.writeText(lastResult);
+    const b=document.getElementById('copyBtn'); b.textContent='✓ Copied!'; b.classList.add('success');
+    toast('Copied!'); setTimeout(()=>{b.textContent='⎘ Copy';b.classList.remove('success');},2000);
+  } catch { toast('Copy failed'); }
+}
+function downloadResult(){
+  if(!lastResult){toast('Nothing to download');return;}
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([lastResult],{type:'text/plain'}));
+  a.download=`iprompt-${currentGoal}-${Date.now()}.txt`;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},300);
+  toast('Downloaded!');
+}
+function exportHistory(){
+  const arr=getHistory(); if(!arr.length){toast('No history');return;}
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(arr,null,2)],{type:'application/json'}));
+  a.download=`iprompt-history-${Date.now()}.json`;
+  document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},300);
+  toast('Exported!');
+}
+
+/* ───── COLLECT OPTIONS ───── */
+function collectOptions(){
+  const g=currentGoal;
+  const model=document.getElementById('modelSelect').value;
+  const verbosity=document.getElementById('verbosity').value;
+  const idea=document.getElementById('ideaInput').value.trim();
+  const opts={goal:g,model,verbosity,idea};
+  if(g==='chat'){
+    opts.audience=document.getElementById('chatAudience').value;
+    opts.expertise=document.getElementById('chatExpertise').value;
+    opts.tone=document.getElementById('chatTone').value;
+    opts.examples=document.getElementById('tog-examples').classList.contains('on');
+    opts.json=document.getElementById('tog-json').classList.contains('on');
+    opts.followup=document.getElementById('tog-followup').classList.contains('on');
+  } else if(g==='code'){
+    opts.lang=document.getElementById('codeLang').value;
+    opts.scale=document.getElementById('codeScale').value;
+    opts.reqs=document.getElementById('codeReqs').value;
+    opts.tests=document.getElementById('tog-tests').classList.contains('on');
+    opts.deploy=document.getElementById('tog-deploy').classList.contains('on');
+    opts.docker=document.getElementById('tog-docker').classList.contains('on');
+  } else if(g==='image'){
+    opts.styles=[...document.querySelectorAll('#stylePills .preset-pill.on')].map(p=>p.dataset.v??'');
+    opts.aspect=document.getElementById('imgAspect').value;
+    opts.quality=document.getElementById('imgQuality').value;
+    opts.seeds=parseInt(document.getElementById('imgSeeds').value)||3;
+    opts.negative=document.getElementById('imgNeg').value;
+  } else if(g==='blog'){
+    opts.length=document.getElementById('blogLength').value;
+    opts.style=document.getElementById('blogStyle').value;
+    opts.keywords=keywords;
+    opts.metaDesc=document.getElementById('tog-meta').classList.contains('on');
+    opts.intro=document.getElementById('tog-intro').classList.contains('on');
+    opts.internalLinks=document.getElementById('tog-links').classList.contains('on');
+  } else if(g==='marketing'){
+    opts.channel=document.getElementById('mktChannel').value;
+    opts.tone=document.getElementById('mktTone').value;
+    opts.audience=document.getElementById('mktAudience').value;
+    opts.cta=document.getElementById('mktCta').value;
+  } else if(g==='agent'){
+    opts.role=document.getElementById('agentRole').value;
+    opts.memory=document.getElementById('agentMemory').value;
+    opts.tools=document.getElementById('agentTools').value;
+    opts.sysPrompt=document.getElementById('tog-sysprompt').classList.contains('on');
+    opts.guardrails=document.getElementById('tog-guardrails').classList.contains('on');
+    opts.examplesAgent=document.getElementById('tog-examples-agent').classList.contains('on');
+  }
+  return opts;
+}
+
+/* ───── META-PROMPT ───── */
+function buildMetaPrompt(opts, isRegen){
+  const regenNote=isRegen?'\n\nIMPORTANT: This is a REGENERATION. Produce a meaningfully different variation — change structure, angle, or emphasis.':'';
+  const vmap={concise:'concise and focused',detailed:'detailed and thorough',exhaustive:'exhaustive and comprehensive'};
+  const vd=vmap[opts.verbosity]??'detailed';
+  let si='';
+  if(opts.goal==='chat'){
+    si=`GOAL: Generate a powerful CHAT / ASSISTANT prompt.\nUSER IDEA: "${opts.idea}"\nAUDIENCE: ${opts.audience}\nEXPERTISE: ${opts.expertise}\nTONE: ${opts.tone}\nVERBOSITY: ${vd}\nEXAMPLES: ${opts.examples}\nJSON META: ${opts.json}\nFOLLOW-UPS: ${opts.followup}\n\nGenerate a specific, natural prompt for ${opts.model} that sets a clear persona, defines the task, specifies output format, and uses the "${opts.tone}" tone.`;
+  } else if(opts.goal==='code'){
+    si=`GOAL: Generate a CODE GENERATION prompt.\nUSER IDEA: "${opts.idea}"\nLANGUAGE: ${opts.lang}\nSCALE: ${opts.scale}\nREQUIREMENTS: ${opts.reqs||'none'}\nTESTS: ${opts.tests}\nDEPLOY: ${opts.deploy}\nDOCKER: ${opts.docker}\n\nGenerate a precise coding prompt for ${opts.model} that specifies architecture, file structure, full working code, error handling, and all requested extras.`;
+  } else if(opts.goal==='image'){
+    si=`GOAL: Generate ${opts.seeds} IMAGE GENERATION prompts.\nUSER IDEA: "${opts.idea}"\nSTYLES: ${opts.styles?.join(', ')||'cinematic'}\nASPECT: ${opts.aspect}\nQUALITY: ${opts.quality}\nNEGATIVE: ${opts.negative||'blur, watermark, text'}\n\nGenerate ${opts.seeds} rich, varied prompts each with subject, environment, lighting, medium, camera notes, negative prompts, and model-specific syntax.`;
+  } else if(opts.goal==='blog'){
+    si=`GOAL: Generate a BLOG POST prompt.\nUSER IDEA: "${opts.idea}"\nLENGTH: ${opts.length}\nSTYLE: ${opts.style}\nKEYWORDS: ${opts.keywords?.join(', ')||'none'}\nMETA DESC: ${opts.metaDesc}\nSAMPLE INTRO: ${opts.intro}\n\nGenerate a comprehensive blog writing prompt with title, section structure, SEO integration, CTA, and consistent voice.`;
+  } else if(opts.goal==='marketing'){
+    si=`GOAL: Generate a MARKETING COPY prompt.\nUSER IDEA: "${opts.idea}"\nCHANNEL: ${opts.channel}\nTONE: ${opts.tone}\nAUDIENCE: ${opts.audience||'TBD'}\nCTA: ${opts.cta||'TBD'}\n\nGenerate a ${opts.channel} marketing copy prompt with headline variations, value props, CTAs, and tone guide.`;
+  } else if(opts.goal==='agent'){
+    si=`GOAL: Generate an AI AGENT SYSTEM PROMPT.\nUSER IDEA: "${opts.idea}"\nROLE: ${opts.role}\nMEMORY: ${opts.memory}\nTOOLS: ${opts.tools||'none'}\nSYS PROMPT: ${opts.sysPrompt}\nGUARDRAILS: ${opts.guardrails}\nEXAMPLES: ${opts.examplesAgent}\n\nGenerate a complete agent configuration with role definition, behavioral guidelines, tool instructions, and response preferences.`;
+  }
+  return `You are an expert prompt engineer. Generate a ${vd} prompt based on this specification:\n\n${si}\n\nCRITICAL: Output ONLY the prompt text. No preamble, no "Here is your prompt:", no markdown code fences.${regenNote}`;
+}
+
+/* ───── GENERATE ───── */
+async function generate(isRegen=false){
+  const idea=document.getElementById('ideaInput').value.trim();
+  if(!idea){toast('⚠ Please enter an idea first');return;}
+  if(isGenerating) return;
+
+  const engine=document.getElementById('engineSelect').value;
+  const keys=getKeys();
+  const apiKey=keys[engine];
+  if(!apiKey){ showKeyModal(); toast('⚠ Please enter your API key first'); return; }
+
+  isGenerating=true;
+  const btn=document.getElementById('generateBtn');
+  btn.disabled=true;
+  document.getElementById('spinner').style.display='flex';
+  document.getElementById('btnLabel').textContent='Generating…';
+  document.getElementById('outputBox').classList.add('loading');
+  document.getElementById('outputEmpty').style.display='none';
+  const pre=document.getElementById('outputPre'); pre.style.display='block'; pre.textContent='';
+
+  const opts=collectOptions();
+  const prompt=buildMetaPrompt(opts, isRegen);
+
+  try {
+    let fullText='';
+
+    if(engine==='groq'){
+      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+        body:JSON.stringify({model:'llama-3.3-70b-versatile',max_tokens:1800,stream:true,messages:[{role:'user',content:prompt}]})
+      });
+      if(!res.ok){ const e=await res.text(); throw new Error(`Groq ${res.status}: ${e}`); }
+      const reader=res.body.getReader(); const dec=new TextDecoder();
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        for(const line of dec.decode(value,{stream:true}).split('\n')){
+          if(!line.startsWith('data: ')) continue;
+          const d=line.slice(6).trim(); if(d==='[DONE]') continue;
+          try{ const t=JSON.parse(d).choices?.[0]?.delta?.content; if(t){fullText+=t;pre.textContent=fullText;pre.scrollTop=pre.scrollHeight;} }catch{}
+        }
+      }
+    } else {
+      // Gemini REST streaming
+      const model='gemini-2.0-flash';
+      const url=`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+      const res=await fetch(url,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:1800}})
+      });
+      if(!res.ok){ const e=await res.text(); throw new Error(`Gemini ${res.status}: ${e}`); }
+      const reader=res.body.getReader(); const dec=new TextDecoder();
+      while(true){
+        const {done,value}=await reader.read(); if(done) break;
+        for(const line of dec.decode(value,{stream:true}).split('\n')){
+          if(!line.startsWith('data: ')) continue;
+          const d=line.slice(6).trim(); if(d==='[DONE]') continue;
+          try{ const t=JSON.parse(d).candidates?.[0]?.content?.parts?.[0]?.text; if(t){fullText+=t;pre.textContent=fullText;pre.scrollTop=pre.scrollHeight;} }catch{}
+        }
+      }
+    }
+
+    showOutput(fullText, opts.goal);
+    saveHistory({t:Date.now(),goal:opts.goal,idea:opts.idea,result:fullText});
+    toast('✦ Prompt generated!');
+  } catch(err){
+    pre.textContent='Error: '+err.message+'\n\nMake sure your API key is valid.';
+    toast('⚠ Generation failed');
+  } finally {
+    isGenerating=false;
+    btn.disabled=false;
+    document.getElementById('spinner').style.display='none';
+    document.getElementById('btnLabel').textContent='✦ Generate Prompt';
+    document.getElementById('outputBox').classList.remove('loading');
+  }
+}
+</script>
+</body>
+</html>
